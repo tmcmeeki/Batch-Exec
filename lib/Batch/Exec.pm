@@ -46,11 +46,11 @@ If you have a web site set up for your module, mention it here.
 
 =head1 AUTHOR
 
-U-matisse\tomby, E<lt>tomby@nonetE<gt>
+Tom McMeekin, E<lt>tmcmeeki.org
 
 =head1 COPYRIGHT AND LICENSE
 
-Copyright (C) 2017 by U-matisse\tomby
+Copyright (C) 2017 by Tom McMeekin
 
 This library is free software; you can redistribute it and/or modify
 it under the same terms as Perl itself, either Perl version 5.22.3 or,

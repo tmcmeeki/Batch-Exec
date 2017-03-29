@@ -1,6 +1,6 @@
 Revision history for Perl extension Batch::Exec.
 
-0.01  Wed Mar 29 18:43:20 2017
+0.01  Wed Mar 29 19:25:11 2017
 	- original version; created by h2xs 1.23 with options
 		-AX --skip-exporter --use-new-tests -n Batch::Exec -b 5.10.0
 
