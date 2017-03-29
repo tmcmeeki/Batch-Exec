@@ -46,7 +46,7 @@ If you have a web site set up for your module, mention it here.
 
 =head1 AUTHOR
 
-Tom McMeekin, E<lt>tmcmeeki.org
+Tom McMeekin, E<lt>tmcmeeki@cpan.orgE<gt>
 
 =head1 COPYRIGHT AND LICENSE
 
