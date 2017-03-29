@@ -1,0 +1,6 @@
+Changes
+Makefile.PL
+MANIFEST
+README
+t/Batch-Exec.t
+lib/Batch/Exec.pm
