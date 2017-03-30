@@ -21,23 +21,53 @@ Copyright (C) 2017  B<Tom McMeekin> E<lt>tmcmeeki@cpan.orgE<gt>
 
 =head1 DESCRIPTION
 
-___detailed_class_description_here___
+The batch executive is a series of modules which provide a framework for
+batch processing.  The fundamental principles of the executive are as follows:
 
-=over 4
+=item a.  Log it.
 
-=item OBJ->attribute1
+Provide as much detail as possible about what step you are up to and what
+you're trying to do.
 
-tba
+=item b.  Check it.
 
-=item OBJ->method1
+Don't keep processing if the last command fails.  Always check that the
+last step succeeded.
 
-tba
+=item c.  Tidy it.
+
+If you're creating a bunch of temporary files to assist with processing, then
+eventually you'll need to clean up after yourself.
 
 =back
 
+This framework applies wrapper routines to existing perl modules and functions,
+and attempts to provides for a more consistent experience
+for batch scripting, execution and debugging.  Whilst the bulk of handling is
+geared at convenience (e.g. avoiding repetitive error checking and logging),
+there are some very specific functions that form part of good batch 
+frameworks, such as semaphore-controlled counting.
+
+The batch executive comprises the following modules:
+
+B<Batch::Exec>	(common routines and error handling)
+
+B<Batch::Log>	(logging and debugging message handling)
+
+B<Batch::Counter>	(semaphore-controlled access to counter files)
+
+B<Batch::Temp>	(temporary file and directory creation and purge).
+
+The Batch::Exec module provides a very simple series of functions, and the 
+basis for the other modules in this series.  Specifically, it covers
+shell execution and status checking, along with file/directory creation 
+and deletion.  It comprises the following attributes and methods:
+
+=over 4
+
 =cut
 
-use 5.010000;
+#use 5.010000;
 use strict;
 use warnings;
 
@@ -45,7 +75,10 @@ use warnings;
 use Carp qw(cluck confess);     # only use stack backtrace within class
 use Data::Dumper;
 use Cwd;
-use Batch::Log qw/ :all /;
+use File::Path;
+
+#use Batch::Log qw/ :all /;
+use Logfer qw/ :all /;
 
 use vars qw/ @EXPORT $VERSION /;
 
@@ -95,6 +128,8 @@ sub AUTOLOAD {
 		return $self->{$name};
 	}
 }
+
+
 sub new {
 	my ($class) = shift;
 	#my $self = $class->SUPER::new(@_);
@@ -116,50 +151,27 @@ sub new {
 		$self->$method($value);
 	}
 
-	$self->{'_oft'} = File::Touch->new;
-
 	return $self;
 }
 
 
-# --- public methods ---
-sub ckdir {
+DESTROY {
 	my $self = shift;
-	my $dn = shift;
-	confess "SYNTAX: ckdir(EXPR)" unless defined ($dn);
 
-	return 0 if ($self->ckdir_rx($dn));
+	$self->clean unless ($self->retain);
 
-	return $self->cough("directory [$dn] does not exist");
+	$self->purge unless ($self->retain);
+
+	-- ${ $self->{_n_objects} };
 }
-sub clean { 	# delete all temp files 
-	my $self = shift;
-	my $count = 0;
 
-	$self->_log->debug(sprintf "tmpdir [%s] _id [%s] _tmpfile [%s]", $self->tmpdir, $self->_id, Dumper($self->_tmpfile))
-		if (${^GLOBAL_PHASE} ne 'DESTRUCT');
 
-	return $count
-		unless (defined $self->_tmpfile);
+=item 1a.  OBJ->cough(EXPR)
 
-	while (my $pn = pop @{ $self->_tmpfile }) {
+Issue warning or fatal message (EXPR) based on fatal attribute.
 
-		next unless (-e $pn); # may have already been deleted elsewhere so check if it actually exists
+=cut
 
-		if ($self->delete($pn)) {
-
-			push @{ $self->_tmpfile }, $pn;
-
-		} else {
-
-			$count++;
-		}
-	}
-	$self->_log->info("$count temporary entries cleaned out")
-		if (${^GLOBAL_PHASE} ne 'DESTRUCT');
-
-	return $count;
-}
 sub cough {
 	my $self = shift;
 	my $msg = shift;
@@ -171,24 +183,15 @@ sub cough {
 
 	return 1;
 }
-sub ckdir_rx { 
-	my $self = shift;
-	my $dn = shift;
 
-	return 1
-		if (defined($dn) && $dn ne "" && -d $dn && -r $dn && -x $dn);
 
-	return 0;
-}
-sub ckdir_rwx { 
-	my $self = shift;
-	my $dn = shift;
+=item 1b.  OBJ->delete(EXPR)
 
-	return 1
-		if ($self->ckdir_rx($dn) && -w $dn);
+Remove the file or directory specified from the filesystem, i.e. unlink or
+this module's rmdir() function.
 
-	return 0;
-}
+=cut
+
 sub delete {	# delete a file or directory
 	my $self = shift;
 	my $pn = shift;
@@ -211,6 +214,17 @@ sub delete {	# delete a file or directory
 
 	return 0;
 }
+
+
+=item 1c.  OBJ->execute([EXPR1], [ARRAY_REF], EXPR2, ...)
+
+Attempt to run the command (arguments starting with EXPR2) via readpipe().
+EXPR1 is the retry count (which defaults to 1).  Output can be stored in
+the ARRAY_REF, if needed for subsequent processing.  The echo attribute
+allows output to be logged.
+
+=cut
+
 sub execute {
 	my $self = shift;
 	my $c_retry = shift;
@@ -251,6 +265,63 @@ sub execute {
 
 	return 0;
 }
+
+
+=item 2a.  OBJ->ckdir(EXPR)
+
+Batch wrapper to the ckdir_rx method.
+
+=cut
+
+sub ckdir {
+	my $self = shift;
+	my $dn = shift;
+	confess "SYNTAX: ckdir(EXPR)" unless defined ($dn);
+
+	return 0 if ($self->ckdir_rx($dn));
+
+	return $self->cough("directory [$dn] does not exist");
+}
+
+=item 2b.  OBJ->ckdir_rx(EXPR)
+
+Check if EXPR is a valid and extant directory with read & execute privileges.
+
+=cut
+
+sub ckdir_rx { 
+	my $self = shift;
+	my $dn = shift;
+
+	return 1
+		if (defined($dn) && $dn ne "" && -d $dn && -r $dn && -x $dn);
+
+	return 0;
+}
+
+=item 2c.  OBJ->ckdir_rwx(EXPR)
+
+Check if EXPR is writable in addition to result of ckdir_rx(EXPR) check.
+
+=cut
+
+sub ckdir_rwx { 
+	my $self = shift;
+	my $dn = shift;
+
+	return 1
+		if ($self->ckdir_rx($dn) && -w $dn);
+
+	return 0;
+}
+
+
+=item 2d.  OBJ->godir(EXPR)
+
+Attempt to navigate to the directory specified by EXPR.
+
+=cut
+
 sub godir {
 	my $self = shift;
 	my $dn = (@_) ? shift : $self->_dn_start;
@@ -264,6 +335,15 @@ sub godir {
 
 	return 0;
 }
+
+
+=item 2e.  OBJ->mkdir(EXPR)
+
+Creates the directory specified by EXPR.  Uses mkpath() to create
+multiple directories.
+
+=cut
+
 sub mkdir {
 	my $self = shift;
 	my $dn = shift;
@@ -279,6 +359,14 @@ sub mkdir {
 
 	return 0;
 }
+
+
+=item 2f.  OBJ->pwd(NULL)
+
+Echoes and returns current working directory, making use of cwd().
+
+=cut
+
 sub pwd {
 	my $self = shift;
 	
@@ -288,6 +376,14 @@ sub pwd {
 
 	return $pwd;
 }
+
+
+=item 2g.  OBJ->rmdir(EXPR)
+
+Removes the directory tree specified by EXPR.  Uses rmpath() to perform delete.
+
+=cut
+
 sub rmdir {
 	my $self = shift;
 	my $dn = shift;
@@ -305,19 +401,14 @@ sub rmdir {
 
 	return 0;
 }
-DESTROY {
-	my $self = shift;
-
-	$self->clean unless ($self->retain);
-
-	$self->purge unless ($self->retain);
-
-	-- ${ $self->{_n_objects} };
-}
 
 1;
 
 __END__
+
+=back
+
+=cut
 
 =head1 VERSION
 
