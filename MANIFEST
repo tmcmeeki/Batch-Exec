@@ -2,5 +2,5 @@ Changes
 Makefile.PL
 MANIFEST
 README
-t/Batch-Exec.t
+t/00basic.t
 lib/Batch/Exec.pm
