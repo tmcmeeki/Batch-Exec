@@ -1,5 +1,5 @@
-# Batch
-Comprehensive Batch Executive
+# Batch::Exec
+Batch Executive	Framework
 
 A broad batch executive that facilitates sequencing of tasks on any platform.
 The basic premise of the batch executive is to provide for temporal cohesion of
