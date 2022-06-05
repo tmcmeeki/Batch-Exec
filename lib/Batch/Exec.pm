@@ -79,6 +79,21 @@ not exist, then create it.
 Checks the existence of the specfied F<DIR> and if it does
 not exist, then create it.
 
+=item 2.  OBJ->cmd2array(EXPR, [BOOLEAN])
+
+Execute the command passed and return output in an array, optionally stripping
+blank tokens (if the boolean flagged passed is true).
+
+=item 3a.  OBJ->os_version
+
+Attempt to ascertain the operating system version.  This may involve polling
+the unix release file.  This routine is non-fatal. Returns an array of tokens
+containing an OS-specific list of version tokens.  WSL-friendly.
+
+=item 3b.  OBJ->wsl_distro
+
+Attempt to determine the WSL distribution (if appropriate).  Windows and WSL
+friendly, but will return undef on other platforms.  Non-fatal.
 
 =item 4a.  OBJ->chmod(mask, path, ...)
 
@@ -88,7 +103,6 @@ Apply the file permissions bits represented by mask to the path(s) supplied.
 =item 4c.  OBJ->mkro(to_path);
 
 Disable all-writable bits from permissions for to_path, via chmod.
-
 
 =item 6a.  OBJ->on_cygwin
 
@@ -159,19 +173,26 @@ Returns FALSE otherwise.
 =cut
 
 use strict;
-use warnings;;
-
+use warnings;
+use utf8;
 
 # --- includes ---
 use Carp qw(cluck confess);
 use Data::Dumper;
-use Log::Log4perl qw/ get_logger /;
+#use Log::Log4perl qw/ get_logger /;
+use Logfer qw/ :all /;
 use Path::Tiny;
+use Text::Unidecode;
 
 
 # --- package constants ---
+use constant CMD_OS_VERSION_WIN32 => "ver";
+use constant CMD_OS_VERSION_UX => "uname";
+
 use constant FD_MAX => 2;	# see is_stdio() function
 
+#use constant PN_OS_ISSUE => File::Spec->catfile("", "etc", "issue");
+use constant PN_OS_ISSUE => path("/etc/issue");
 use constant PN_OS_RELEASE => path("/proc/version");
 use constant PN_OS_VERSION => path("/proc/sys/kernel/osrelease");
 
@@ -183,7 +204,7 @@ use constant STR_NULL => "(null)";
 #our @ISA = qw(Exporter);
 our $AUTOLOAD;
 our @ISA;
-our $VERSION = sprintf "%d.%03d", q$Revision: 1.14 $ =~ /(\d+)/g;
+our $VERSION = '0.001';
 
 
 # --- package locals ---
@@ -193,15 +214,19 @@ my %_attribute = (	# _attributes are restricted; no direct get/set
 	_id => undef,
 	_inherent => [],	# genes that i'll pass on to my children
 	_n_objects => \$_n_objects,
-	log => get_logger("Batch"),
+	log => get_logger("Batch::Exec"),
 	autoheader => 0,	# automatically put a header on any files
+	cmd_os_version => undef,
+	cmd_os_where => undef,
 	dn_start => undef,	# default this value, may need it later!
 	echo => 0,		# echo stdout for selected operations
 	fatal => 1,		# controls whether failed checks "die"
 	null => STR_NULL,	# a nice null value if you want it
+	pn_issue => PN_OS_ISSUE,
 	pn_rlse => PN_OS_RELEASE,
 	pn_vers => PN_OS_VERSION,
 	stdfd => FD_MAX,
+	wsl_installed => 0,	# flag shows if WSL installed. see wsl_distro
 );
 
 
@@ -324,6 +349,14 @@ sub new {
 		$self->$method($value);
 	}
 	# ___ additional class initialisation here ___
+	#
+	my $cv = ($self->on_windows) ? CMD_OS_VERSION_WIN32 : CMD_OS_VERSION_UX;
+
+	$self->cmd_os_version($cv);
+
+	my $cw = ($self->on_windows) ? "where" : "which";
+
+	$self->cmd_os_where($cw);
 
 	return $self;
 }
@@ -397,6 +430,44 @@ sub ckdir_rx {
 		if (!$self->is_blank($dn) && -d $dn && -r $dn && -x $dn);
 
 	return 0;
+}
+
+
+sub cmd2array {	# execute the command passed and return output in an array
+	my $self = shift;
+	my $cmd = shift;
+	my $strip = shift;	# flag to remove empty bits
+
+	$strip = 0 unless (defined $strip);
+
+	$self->log->info("executing [$cmd]")
+		if ($self->{'echo'});
+
+	my $output = unidecode(readpipe($cmd));
+
+	$self->log->trace("output [$output]");
+
+	$output =~ s/\x00//g;	# e.g. 00000800  20 20 20 20  20 27 44  0  65  0 66  0  61  0 75  0        'D e f a u 
+
+	my @tokens = split(/[\s\n]+/m, $output);
+
+	$self->log->trace(sprintf "tokens [%s]", Dumper(\@tokens));
+
+	if (@tokens) {
+		$self->log->info(sprintf "command returned %d tokens", scalar(@tokens))
+			if ($self->{'echo'});
+	} else {
+		$self->log->logwarn("WARNING command returned no output");
+	}
+
+	my @output; if ($strip) {
+
+		map { push @output, $_ unless($self->is_blank($_)); } @tokens;
+	} else {
+		@output = @tokens;
+	}
+
+	return @output;
 }
 
 
@@ -527,7 +598,7 @@ sub like_unix {	# read-only method! true for a unix-like platform, incl. linux
 	my $self = shift;
 
 	return 1
-		if ($self->on_linux);
+		if ($self->on_linux || $self->on_cygwin);
 
 	# ref. http://alma.ch/perl/perloses.htm
 
@@ -659,6 +730,31 @@ sub on_wsl {	# read-only method!
 }
 
 
+sub os_version { # poll the unix release file; non-fatal; returns array of tokens
+	my $self = shift;
+
+	my $cmd; if ($self->on_wsl) {
+
+		$cmd = "cat " . $self->pn_issue;
+
+	} else {
+
+		$cmd = $self->cmd_os_version;
+	}
+
+	my @issue = $self->cmd2array($cmd, 1);
+
+	push @issue, $self->null
+		unless (@issue);
+
+	shift @issue if ($self->on_windows);
+
+	$self->log->debug(sprintf "issue [%s]", Dumper(\@issue));
+
+	return @issue;
+}
+
+
 sub pwd {
 	my $self = shift;
 	
@@ -715,6 +811,87 @@ sub trim_ws {	# trim trailing and leading whitespace in string passed
 	return $self->trim($str, '\s+');
 }
 
+
+sub where {	# try to find the executable passed in the path
+	my $self = shift;
+	my $exec = shift;
+	confess "SYNTAX: where(EXPR)" unless (defined $exec);
+
+	my $cmd = join(' ', $self->cmd_os_where, $exec);
+
+	return $self->cmd2array($cmd);
+}
+
+
+sub wsl_distro {	# attempt to determine the WSL distro if appropriate
+	my $self = shift;
+
+	unless ($self->like_windows) {
+
+		$self->log->logwarn("WSL does not exist on this platform");
+
+		return undef;
+	}
+
+	if ($self->on_wsl) {	# internal to WSL it cannot access "wsl" cmd
+
+		my @dist = $self->os_version;
+
+		$self->wsl_installed(1);
+
+		return $dist[0]
+			unless ($dist[0] eq $self->null);
+	}
+# ---- WSL version 2 ----
+# wsl --status
+# Default Distribution: Ubuntu
+# Default Version: 2
+
+	my @wls = $self->cmd2array("wsl --status");
+
+	if (@wls) {
+
+		if ($wls[0] eq 'Default' && $wls[1] eq 'Distribution:') {
+
+			my $dist = $wls[2];
+
+			$self->log->info(sprintf "WSL distro is [%s]", $dist)
+				if ($self->{'echo'});
+
+			$self->wsl_installed(1);
+
+			return $dist;
+
+		} elsif ($wls[1] eq 'Invalid' && $wls[6] eq 'Invalid') {
+# ---- WSL version 1 ----
+# wsl --status
+#
+# Invalid command line option: --status
+#
+# Usage: wsl.exe [option] ...
+			$self->log->info("trying alternative WSL method")
+				if ($self->{'echo'});
+
+			@wls = $self->cmd2array("wslconfig /l");
+# wslconfig /l
+# 
+# Windows Subsystem for Linux Distributions:
+# 
+# Ubuntu-20.04 (Default)
+
+			if (@wls && $wls[2] eq 'Subsystem' && $wls[6] eq '(Default)') {
+
+				$self->wsl_installed(1);
+	
+				return $wls[5];
+			}
+		}
+	}
+	$self->log->info("WSL distribution unable to be determined")
+		if ($self->{'echo'});
+
+	return undef;
+}
 
 1;
 

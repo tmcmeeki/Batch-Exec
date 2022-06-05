@@ -1,13 +1,13 @@
 #!/usr/bin/perl
 #
-# Batch-Exec-1.t - test harness for the Batch Exec framework: basics, directory handling
+# 00_basic.t - test harness for the Batch Exec framework: basics
 #
 use strict;
 
 use Data::Dumper;
 use Logfer qw/ :all /;
 #use Log::Log4perl qw/ :easy /;
-use Test::More tests => 75;
+use Test::More tests => 83;
 use File::Basename;
 use File::Spec;
 
@@ -57,7 +57,7 @@ isa_ok($obj2, "Batch::Exec",	"class check $cycle"); $cycle++;
 
 # -------- simple attributes --------
 my @attr = $obj1->Attributes;
-my $attrs = 10;
+my $attrs = 12;
 is(scalar(@attr), $attrs,	"class attributes");
 is(shift @attr, "Batch::Exec",	"class okay");
 
@@ -97,13 +97,13 @@ is($obj1->Inherit($obj2), $attrs - 1,	"inherit same attribute count");
 
 # ---- RO: platform-related -----
 ok($obj1->on_cygwin >= 0, 		"on_cygwin any");
-ok($obj1->on_linux >= 0, 			"on_linux any");
+ok($obj1->on_linux >= 0, 		"on_linux any");
 ok($obj1->on_windows >= 0, 		"on_windows any");
 ok($obj1->on_wsl >= 0, 			"on_wsl any");
 
 ok($obj1->like_unix >= 0, 		"like_unix any");
 ok($obj1->like_windows >= 0, 		"like_windows any");
-if ($obj1->on_wsl) {
+if ($obj1->on_wsl || $obj1->on_cygwin) {
 	is($obj1->like_windows, $obj1->like_unix, 	"like unix and windows");
 } else {
 	isnt($obj1->like_windows, $obj1->like_unix, 	"unix unlike_windows");
@@ -176,11 +176,11 @@ __END__
 
 =head1 DESCRIPTION
 
-Batch-Exec-1.t - test harness for the Batch Exec framework
+00_basic.t - test harness for the Batch Exec framework
 
 =head1 VERSION
 
-$Revision: 1.15 $
+___EUMM_VERSION___
 
 =head1 AUTHOR
 
