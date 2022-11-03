@@ -90,15 +90,32 @@ Attempt to ascertain the operating system version.  This may involve polling
 the unix release file.  This routine is non-fatal. Returns an array of tokens
 containing an OS-specific list of version tokens.  WSL-friendly.
 
-=item 3b.  OBJ->wsl_distro
+=item 3c.  OBJ->pn_issue
+
+The pathname of the OS distribution, generally known as /etc/issue in Linux.
+
+=item 3c.  OBJ->pn_release
+
+The pathname of the OS release, generally kept under /proc for Linux.
+
+=item 3c.  OBJ->pn_version
+
+The pathname of the OS version, generally kept under /proc for Linux.
+
+=item 3b.  OBJ->wsl_dist
 
 Attempt to determine the WSL distribution (if appropriate).  Windows and WSL
 friendly, but will return undef on other platforms.  Non-fatal.
 
+=item 3c.  OBJ->wsl_active
+
+This flag defaults to false, but will get updated to true if the wsl_dist() 
+method find an installed WSL distribution.  Note that WSL can be installed
+but has no active distribution. 
+
 =item 4a.  OBJ->chmod(mask, path, ...)
 
 Apply the file permissions bits represented by mask to the path(s) supplied.
-
 
 =item 4c.  OBJ->mkro(to_path);
 
@@ -110,7 +127,6 @@ Read-only method advises if the current platform is associated with
 the hybrid B<Cygwin> platform, which has specific handling around storage
 which abstracts the B<Windows> drive assignment paradigm.  Used internally
 but may be useful outside this module.
-
 
 =item 6b.  OBJ->on_linux
 
@@ -223,10 +239,10 @@ my %_attribute = (	# _attributes are restricted; no direct get/set
 	fatal => 1,		# controls whether failed checks "die"
 	null => STR_NULL,	# a nice null value if you want it
 	pn_issue => PN_OS_ISSUE,
-	pn_rlse => PN_OS_RELEASE,
-	pn_vers => PN_OS_VERSION,
+	pn_release => PN_OS_RELEASE,
+	pn_version => PN_OS_VERSION,
 	stdfd => FD_MAX,
-	wsl_installed => 0,	# flag shows if WSL installed. see wsl_distro
+	wsl_active => 0,	# flag shows if WSL installed. see wsl_dist
 );
 
 
@@ -451,7 +467,7 @@ sub cmd2array {	# execute the command passed and return output in an array
 
 	my @tokens = split(/[\s\n]+/m, $output);
 
-	$self->log->trace(sprintf "tokens [%s]", Dumper(\@tokens));
+#	$self->log->trace(sprintf "tokens [%s]", Dumper(\@tokens));
 
 	if (@tokens) {
 		$self->log->info(sprintf "command returned %d tokens", scalar(@tokens))
@@ -466,6 +482,7 @@ sub cmd2array {	# execute the command passed and return output in an array
 	} else {
 		@output = @tokens;
 	}
+	$self->log->trace(sprintf "output [%s]", Dumper(\@output));
 
 	return @output;
 }
@@ -704,13 +721,13 @@ sub on_wsl {	# read-only method!
 	return 0	# need to check if actually on WSL
 		unless ($self->on_linux);
 
-	my $pn; if (-f $self->pn_rlse) {
+	my $pn; if (-f $self->pn_release) {
 
-		$pn = $self->pn_rlse;
+		$pn = $self->pn_release;
 
-	} elsif (-f $self->pn_vers) {
+	} elsif (-f $self->pn_version) {
 
-		$pn = $self->pn_vers;
+		$pn = $self->pn_version;
 	} else {
 		$self->log->logconfess("unable to determine platform [$^O]");
 	}
@@ -819,16 +836,16 @@ sub where {	# try to find the executable passed in the path
 
 	my $cmd = join(' ', $self->cmd_os_where, $exec);
 
-	return $self->cmd2array($cmd);
+	return $self->cmd2array($cmd, 1);
 }
 
 
-sub wsl_distro {	# attempt to determine the WSL distro if appropriate
+sub wsl_dist {	# attempt to determine the WSL distro if appropriate
 	my $self = shift;
 
 	unless ($self->like_windows) {
 
-		$self->log->logwarn("WSL does not exist on this platform");
+		$self->log->logwarn("WSL not applicable to this platform");
 
 		return undef;
 	}
@@ -837,7 +854,7 @@ sub wsl_distro {	# attempt to determine the WSL distro if appropriate
 
 		my @dist = $self->os_version;
 
-		$self->wsl_installed(1);
+		$self->wsl_active(1);
 
 		return $dist[0]
 			unless ($dist[0] eq $self->null);
@@ -847,7 +864,7 @@ sub wsl_distro {	# attempt to determine the WSL distro if appropriate
 # Default Distribution: Ubuntu
 # Default Version: 2
 
-	my @wls = $self->cmd2array("wsl --status");
+	my @wls = $self->cmd2array("wsl --status", 1);
 
 	if (@wls) {
 
@@ -858,9 +875,22 @@ sub wsl_distro {	# attempt to determine the WSL distro if appropriate
 			$self->log->info(sprintf "WSL distro is [%s]", $dist)
 				if ($self->{'echo'});
 
-			$self->wsl_installed(1);
+			$self->wsl_active(1);
 
 			return $dist;
+# WSL2 with no distro installed
+# wsl --status
+#
+# Copyright (c) Microsoft Corporation. All rights reserved.
+# 
+# Usage: wsl.exe [Argument]
+# 
+# Arguments:
+		} elsif ($wls[0] eq 'Copyright' && $wls[7] eq 'Usage:') {
+
+			$self->log->info("WSL available but no distribution")
+				if ($self->{'echo'});
+
 
 		} elsif ($wls[1] eq 'Invalid' && $wls[6] eq 'Invalid') {
 # ---- WSL version 1 ----
@@ -872,7 +902,7 @@ sub wsl_distro {	# attempt to determine the WSL distro if appropriate
 			$self->log->info("trying alternative WSL method")
 				if ($self->{'echo'});
 
-			@wls = $self->cmd2array("wslconfig /l");
+			@wls = $self->cmd2array("wslconfig /l", 1);
 # wslconfig /l
 # 
 # Windows Subsystem for Linux Distributions:
@@ -881,7 +911,7 @@ sub wsl_distro {	# attempt to determine the WSL distro if appropriate
 
 			if (@wls && $wls[2] eq 'Subsystem' && $wls[6] eq '(Default)') {
 
-				$self->wsl_installed(1);
+				$self->wsl_active(1);
 	
 				return $wls[5];
 			}

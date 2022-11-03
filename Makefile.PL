@@ -12,7 +12,10 @@ WriteMakefile(
     PREREQ_PM         => {
         'Carp' => '0',
         'Data::Dumper' => '0',
-        'Log::Log4perl' => '0',
+#        'Log::Log4perl' => '0',
+        'Logfer' => '0',
+        'Path::Tiny' => '0',
+        'Text::Unidecode' => '0',
 }, # e.g., Module::Name => 1.1
     ABSTRACT_FROM     => 'lib/Batch/Exec.pm', # retrieve abstract from module
 

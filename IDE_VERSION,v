@@ -1,0 +1,42 @@
+head	1.2;
+access;
+symbols;
+locks; strict;
+comment	@# @;
+
+
+1.2
+date	2022.06.05.05.22.26;	author mcmeet;	state Exp;
+branches;
+next	1.1;
+
+1.1
+date	2022.06.05.04.39.25;	author mcmeet;	state Exp;
+branches;
+next	;
+
+
+desc
+@@
+
+
+1.2
+log
+@*** empty log message ***
+@
+text
+@IDE_PACKAGE: Batch-Exec
+IDE_VERSION: $Revision: 1.1 $
+IDE_DATE: 20220605
+@
+
+
+1.1
+log
+@Initial revision
+@
+text
+@d2 1
+a2 1
+IDE_VERSION: $Revision$
+@

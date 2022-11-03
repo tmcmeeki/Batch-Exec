@@ -1,6 +1,15 @@
+Batch-Exec_audit.txt
 Changes
-Makefile.PL
+IDE_VERSION
+IDE_VERSION,v78PJYl
+LICENSE
 MANIFEST
+MYMETA.json
+MYMETA.yml
+Makefile
+Makefile.PL
 README
-t/00basic.t
+README.md
 lib/Batch/Exec.pm
+t/00_basic.t
+t/01_wsl.t

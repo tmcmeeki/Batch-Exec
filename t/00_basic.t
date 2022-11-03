@@ -7,7 +7,7 @@ use strict;
 use Data::Dumper;
 use Logfer qw/ :all /;
 #use Log::Log4perl qw/ :easy /;
-use Test::More tests => 83;
+use Test::More tests => 97;
 use File::Basename;
 use File::Spec;
 
@@ -57,7 +57,7 @@ isa_ok($obj2, "Batch::Exec",	"class check $cycle"); $cycle++;
 
 # -------- simple attributes --------
 my @attr = $obj1->Attributes;
-my $attrs = 12;
+my $attrs = 14;
 is(scalar(@attr), $attrs,	"class attributes");
 is(shift @attr, "Batch::Exec",	"class okay");
 
@@ -170,6 +170,17 @@ is($fc, 0, 				"after delete $cycle"); $cycle++;
 ok( $obj1->rmdir($dn_tmp) == 0,		"rmdir ok");
 isnt( -d $dn_tmp, 0,			"rmdir check");
 ok( $obj2->rmdir(DN_INVALID) < 0,	"rmdir warn");
+
+
+# ----- operating system paths -----
+ok(defined($obj1->pn_issue),		"pn_issue defined");
+ok(length($obj1->pn_issue) > 5,		"pn_issue string");
+
+ok(defined($obj1->pn_release),		"pn_release defined");
+ok(length($obj1->pn_release) > 5,	"pn_release string");
+
+ok(defined($obj1->pn_version),		"pn_version defined");
+ok(length($obj1->pn_version) > 5,	"pn_version string");
 
 
 __END__

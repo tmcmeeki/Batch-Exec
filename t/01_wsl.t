@@ -7,7 +7,7 @@ use strict;
 use Data::Dumper;
 use Logfer qw/ :all /;
 #use Log::Log4perl qw/ :easy /;
-use Test::More tests => 11;
+use Test::More tests => 12;
 use File::Basename;
 use File::Spec;
 
@@ -78,36 +78,58 @@ if ($obj1->on_cygwin) {
 }
 
 
-# -------- wsl_distro --------
-if ($obj1->on_cygwin) {
-	ok(defined($obj1->wsl_distro),	"wsl_distro defined on_cygwin");
-
-	ok(defined($obj2->wsl_distro),	"wsl_distro echoed on_cygwin");
-
-} elsif ($obj1->on_wsl) {
-	ok(defined($obj1->wsl_distro),	"wsl_distro defined on_wsl");
-
-	ok(defined($obj2->wsl_distro),	"wsl_distro echoed on_wsl");
-
-} elsif ($obj1->on_linux) {
-	ok(!defined($obj1->wsl_distro),	"wsl_distro defined on_linux");
-
-	ok(defined($obj2->wsl_distro),	"wsl_distro echoed on_linux");
-
-} elsif ($obj1->on_windows) {
-	ok(defined($obj1->wsl_distro),	"wsl_distro defined on_windows");
-
-	ok(defined($obj2->wsl_distro),	"wsl_distro echoed on_windows");
-
-} else {
-	ok(defined($obj1->wsl_distro),	"wsl_distro defined other");
-
-	ok(defined($obj2->wsl_distro),	"wsl_distro echoed other");
-}
-
-my $dist = $obj1->wsl_distro;
+# -------- wsl_dist > wsl_active --------
+# need to run wsl_dist to get an updated view of "wsl_active"
+my $dist = $obj1->wsl_dist;
 
 $log->debug(sprintf "dist [%s]", defined($dist) ? $dist : $obj1->null);
+
+my $wsl_active = $obj1->wsl_active;
+
+ok($wsl_active >= 0,			"wsl_active any");
+
+
+# -------- wsl_dist --------
+if ($obj1->on_cygwin) {
+
+	if ($wsl_active) {
+		ok(defined($obj1->wsl_dist),	"wsl_dist defined on_cygwin");
+		ok(defined($obj2->wsl_dist),	"wsl_dist echoed on_cygwin");
+	} else {
+		ok(!defined($obj1->wsl_dist),	"wsl_dist undefined on_cygwin");
+		ok(!defined($obj2->wsl_dist),	"wsl_dist echoed on_cygwin");
+	}
+
+} elsif ($obj1->on_wsl) {
+
+	if ($wsl_active) {
+		ok(defined($obj1->wsl_dist),	"wsl_dist defined on_wsl");
+		ok(defined($obj2->wsl_dist),	"wsl_dist echoed on_wsl");
+	} else {
+		ok(!defined($obj1->wsl_dist),	"wsl_dist undefined on_wsl");
+		ok(!defined($obj2->wsl_dist),	"wsl_dist echoed on_wsl");
+	}
+
+} elsif ($obj1->on_linux) {
+
+	ok(!defined($obj1->wsl_dist),	"wsl_dist defined on_linux");
+	ok(!defined($obj2->wsl_dist),	"wsl_dist echoed on_linux");
+
+} elsif ($obj1->on_windows) {
+
+	if ($wsl_active) {
+		ok(defined($obj1->wsl_dist),	"wsl_dist defined on_windows");
+		ok(defined($obj2->wsl_dist),	"wsl_dist echoed on_windows");
+	} else {
+		ok(!defined($obj1->wsl_dist),	"wsl_dist undefined on_windows");
+		ok(!defined($obj2->wsl_dist),	"wsl_dist echoed on_windows");
+	}
+
+} else {
+	ok(!defined($obj1->wsl_dist),	"wsl_dist undefined other");
+	ok(!defined($obj2->wsl_dist),	"wsl_dist echoed other");
+}
+
 
 __END__
 
