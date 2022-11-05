@@ -3,8 +3,7 @@ use ExtUtils::MakeMaker;
 # See lib/ExtUtils/MakeMaker.pm for details of how to influence
 # the contents of the Makefile that is written.
 
-my $_swap_vers = 'find $(DISTVNAME) -type f -exec egrep -q ___EUMM_VERSION___ {} \; -exec sed -i "s/___EUMM_VERSION___/Build V$(VERSION)/" {} \; -print ;' .
-'perldoc -uT $(DISTVNAME)/$(VERSION_FROM) > README.pod';
+my $_swap_vers = 'find $(DISTVNAME) -type f -exec egrep -q _IDE_REVISION_ {} \; -exec sed -i "s/_IDE_REVISION_/Build V$(VERSION)/" {} \; -print ;' .  'perldoc -uT $(DISTVNAME)/$(VERSION_FROM) > README.pod';
 
 WriteMakefile(
     NAME              => 'Batch::Exec',

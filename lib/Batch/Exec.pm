@@ -48,141 +48,63 @@ and processsing for all types of batch processing.
 As such it simplifies the interface into many lower-level Perl libraries 
 in order to make batch processing more reliable and traceable.
 
+=head2 ATTRIBUTES
+
 =over 4
 
-=item 1a.  OBJ->ckdir(BOOLEAN, DIR)
+=item OBJ->autoheader
 
-Checks the existence of the specfied F<DIR>.  Issue
-error message if it does not exist.  If B<BOOLEAN> evaluates to
-TRUE, then the program will exit.  Otherwise normal processing will resume.
+Boolean controls the insertion of a descriptive header to an output file.
 
+=item OBJ->cmd_os_version
 
-=item 1b.  OBJ->godir(DIR)
+The shell command used to determine the operating systems version.
 
-Checks the existence of the specfied F<DIR> and change to it.
-Will trigger a fatal error if the directory does not exist.
+=item OBJ->cmd_os_where
 
+The shell command used to determine the location of an executable.
 
-=item 1c.  OBJ->pwd
+=item OBJ->dn_start
 
-coughs current directory (done by godir implicitly).
+The starting directory of this process, which gets populated upon object instantiation.
 
+=item OBJ->echo
 
-=item 1d.  OBJ->mkdir(DIR)
+Boolean controls the display of stdout for selected operations.
 
-Checks the existence of the specfied F<DIR> and if it does
-not exist, then create it.
+=item OBJ->fatal
 
+Boolean controls the fatality of selected operations. A default applies.
 
-=item 1e.  OBJ->rmdir(DIR)
+=item OBJ->log
 
-Checks the existence of the specfied F<DIR> and if it does
-not exist, then create it.
+The logging object is embedded in this object, per L<Log::Log4perl>.
 
-=item 2.  OBJ->cmd2array(EXPR, [BOOLEAN])
-
-Execute the command passed and return output in an array, optionally stripping
-blank tokens (if the boolean flagged passed is true).
-
-=item 3a.  OBJ->os_version
-
-Attempt to ascertain the operating system version.  This may involve polling
-the unix release file.  This routine is non-fatal. Returns an array of tokens
-containing an OS-specific list of version tokens.  WSL-friendly.
-
-=item 3c.  OBJ->pn_issue
+=item OBJ->pn_issue
 
 The pathname of the OS distribution, generally known as /etc/issue in Linux.
 
-=item 3c.  OBJ->pn_release
+=item OBJ->pn_release
 
 The pathname of the OS release, generally kept under /proc for Linux.
 
-=item 3c.  OBJ->pn_version
+=item OBJ->pn_version
 
 The pathname of the OS version, generally kept under /proc for Linux.
 
-=item 3b.  OBJ->wsl_dist
+=item OBJ->re_whitespace
 
-Attempt to determine the WSL distribution (if appropriate).  Windows and WSL
-friendly, but will return undef on other platforms.  Non-fatal.
+The REGULAR expression representing a blank or whitespace string.
 
-=item 3c.  OBJ->wsl_active
+=item OBJ->stdfd
+
+The maximum value of a standard file descriptor (i.e. defaults to stderr).
+
+=item OBJ->wsl_active
 
 This flag defaults to false, but will get updated to true if the wsl_dist() 
 method find an installed WSL distribution.  Note that WSL can be installed
 but has no active distribution. 
-
-=item 4a.  OBJ->chmod(mask, path, ...)
-
-Apply the file permissions bits represented by mask to the path(s) supplied.
-
-=item 4c.  OBJ->mkro(to_path);
-
-Disable all-writable bits from permissions for to_path, via chmod.
-
-=item 6a.  OBJ->on_cygwin
-
-Read-only method advises if the current platform is associated with 
-the hybrid B<Cygwin> platform, which has specific handling around storage
-which abstracts the B<Windows> drive assignment paradigm.  Used internally
-but may be useful outside this module.
-
-=item 6b.  OBJ->on_linux
-
-Read-only method advises if the current platform is Linux.
-
-
-=item 6c.  OBJ->on_wsl
-
-Read-only method advises if the current platform is WSL.
-
-
-=item 6d.  OBJ->on_windows
-
-Read-only method advises if the current platform is MS Windows. 
-
-
-=item 6e.  OBJ->like_unix
-
-Read-only method advises if the current platform is Unix-like, including Linux.
-
-
-=item 6f.  OBJ->like_windows
-
-Read-only method advises if the current platform is associated with a Windows
-or Windows-like OS, incl. WSL or Cygwin.
-
-
-=item 7d.  OBJ->crlf(EXPR)
-
-Strip CR from the EXPR passed; useful for converting DOS text records.
-
-
-=item 9a.  OBJ->is_blank(EXPR)
-
-Returns TRUE if the expression passed evaluates to either an empty
- string or a whitespace string.
-Will cause an exception if EXPR is undefined.  Returns FALSE otherwise.
-
-
-=item 9a.  OBJ->is_null(EXPR)
-
-Returns TRUE if the expression passed evaluates to the null value.
-(i.e. matches the value in the null attribute OBJ->null).
-Will cause an exception if EXPR is undefined.  Returns FALSE otherwise.
-
-
-=item 9b.  OBJ->is_extant(PATH)
-
-Checks if the file specified by PATH exists. Subject to fatal processing.
-
-
-=item 9c.  OBJ->is_stdio(FILEHANDLE)
-
-Returns TRUE if the FILEHANDLE passed maps to one of the standard
-file descriptors, i.e. 0 = stdin, 1 = stdout, 2 = stderr.
-Returns FALSE otherwise.
 
 =back
 
@@ -212,7 +134,7 @@ use constant PN_OS_ISSUE => path("/etc/issue");
 use constant PN_OS_RELEASE => path("/proc/version");
 use constant PN_OS_VERSION => path("/proc/sys/kernel/osrelease");
 
-use constant STR_NULL => "(null)";
+use constant RE_WHITESPACE => '\s+';
 
 
 # --- package globals ---
@@ -237,10 +159,10 @@ my %_attribute = (	# _attributes are restricted; no direct get/set
 	dn_start => undef,	# default this value, may need it later!
 	echo => 0,		# echo stdout for selected operations
 	fatal => 1,		# controls whether failed checks "die"
-	null => STR_NULL,	# a nice null value if you want it
 	pn_issue => PN_OS_ISSUE,
 	pn_release => PN_OS_RELEASE,
 	pn_version => PN_OS_VERSION,
+	re_whitespace => RE_WHITESPACE,
 	stdfd => FD_MAX,
 	wsl_active => 0,	# flag shows if WSL installed. see wsl_dist
 );
@@ -377,6 +299,15 @@ sub new {
 	return $self;
 }
 
+=head2 METHODS
+
+=over 4
+
+=item OBJ->chmod(PERMS, PATH, ...)
+
+Apply the file permissions specificed to the path(s).
+
+=cut
 
 sub chmod {
 	my $self = shift;
@@ -415,17 +346,46 @@ sub chmod {
 	return $count;
 }
 
+=item OBJ->ckdir_rx(DIR)
+
+Truncate the string passed.  Optionally pass a length (a default applies).
+
+=cut
+
+sub ckdir_rx { 
+	my $self = shift;
+	my $dn = shift;
+
+	confess "SYNTAX: ckdir_rx(DIR)" unless (defined $dn);
+
+	return 1
+		if (-d $dn && -r $dn && -x $dn);
+
+	return 0;
+}
+
+
+=item OBJ->ckdir(DIR)
+
+Checks the existence of the directory specfied by DIR.
+
+=cut
 
 sub ckdir {
 	my $self = shift;
 	my $dn = shift;
-	confess "SYNTAX: ckdir(EXPR)" unless defined ($dn);
+	confess "SYNTAX: ckdir(DIR)" unless defined ($dn);
 
 	return 0 if ($self->ckdir_rx($dn));
 
 	return $self->cough("directory [$dn] does not exist");
 }
 
+=item OBJ->ckdir_rwx(DIR)
+
+Truncate the string passed.  Optionally pass a length (a default applies).
+
+=cut
 
 sub ckdir_rwx { 
 	my $self = shift;
@@ -437,17 +397,12 @@ sub ckdir_rwx {
 	return 0;
 }
 
+=item OBJ->cmd2array(EXPR, [BOOLEAN])
 
-sub ckdir_rx { 
-	my $self = shift;
-	my $dn = shift;
+Execute the command passed and return output in an array, optionally stripping
+blank tokens (if the boolean flagged passed is true).
 
-	return 1
-		if (!$self->is_blank($dn) && -d $dn && -r $dn && -x $dn);
-
-	return 0;
-}
-
+=cut
 
 sub cmd2array {	# execute the command passed and return output in an array
 	my $self = shift;
@@ -478,7 +433,9 @@ sub cmd2array {	# execute the command passed and return output in an array
 
 	my @output; if ($strip) {
 
-		map { push @output, $_ unless($self->is_blank($_)); } @tokens;
+		map {
+			push @output, $_ if (length($_));
+		} @tokens;
 	} else {
 		@output = @tokens;
 	}
@@ -487,6 +444,13 @@ sub cmd2array {	# execute the command passed and return output in an array
 	return @output;
 }
 
+=item OBJ->cough(EXPR)
+
+The central fatal method which issues a warning or error message.
+This is called for many routines in this class and subclass to check if
+program termination is warranted, based on the B<fatal> attribute.
+
+=cut
 
 sub cough {
 	my $self = shift;
@@ -500,9 +464,13 @@ sub cough {
 	return -1;
 }
 
+=item OBJ->crlf(EXPR)
 
-sub crlf {
-#	remove the CR from DOS CRLF (end-of-line string)
+Strip CR from the EXPR passed; useful for converting DOS text records.
+
+=cut
+
+sub crlf { #	remove the CR from DOS CRLF (end-of-line string)
 	my $self = shift;
 	my $str = shift;
 	confess "SYNTAX: crlf(EXPR)" unless (defined $str);
@@ -518,8 +486,13 @@ sub crlf {
 	return $str;
 }
 
+=item OBJ->delete(PATH)
 
-sub delete {	# delete a file or directory
+Delete a file or directory.
+
+=cut
+
+sub delete {
 	my $self = shift;
 	my $pn = shift;
 	confess "SYNTAX: delete(EXPR)" unless defined ($pn);
@@ -543,10 +516,15 @@ sub delete {	# delete a file or directory
 }
 
 
+=item OBJ->godir(DIR)
+
+Checks the existence of the specfied B<DIR> and change to it.
+
+=cut
+
 sub godir {
 	my $self = shift;
 	my $dn = (@_) ? shift : $self->dn_start;
-#	confess "SYNTAX: godir(EXPR)" unless defined ($dn);
 
 	$self->ckdir_rx($dn) || return($self->cough("invalid directory [$dn]"));
 
@@ -557,17 +535,11 @@ sub godir {
 	return 0;
 }
 
+=item OBJ->is_extant(PATH)
 
-sub is_blank {
-	my $self = shift;
-	my $str = shift;
-	confess "SYNTAX: is_blank(EXPR)" unless defined ($str);
+Checks if the file specified by PATH exists. Subject to fatal processing.
 
-	return 1 if ($str =~ /^\s*$/);
-
-	return 0;
-}
-
+=cut
 
 sub is_extant {
 	my $self = shift;
@@ -582,17 +554,13 @@ sub is_extant {
 	return 0;	# reverse polarity
 }
 
+=item OBJ->is_stdio(FILEHANDLE)
 
-sub is_null {
-	my $self = shift;
-	my $str = shift;
-	confess "SYNTAX: is_null(EXPR)" unless defined ($str);
+Returns TRUE if the FILEHANDLE passed maps to one of the standard
+file descriptors, i.e. 0 = stdin, 1 = stdout, 2 = stderr.
+Returns FALSE otherwise.
 
-	return 1 if ($str eq $self->{'null'});
-
-	return 0;
-}
-
+=cut
 
 sub is_stdio {	# is a standard file descriptor, e.g. 0, 1, 2
 	my $self = shift;
@@ -610,8 +578,13 @@ sub is_stdio {	# is a standard file descriptor, e.g. 0, 1, 2
 	return 1;
 }
 
+=item OBJ->like_unix
 
-sub like_unix {	# read-only method! true for a unix-like platform, incl. linux
+Read-only method advises if the current platform is Unix-like, including Linux.
+
+=cut
+
+sub like_unix {
 	my $self = shift;
 
 	return 1
@@ -630,7 +603,14 @@ sub like_unix {	# read-only method! true for a unix-like platform, incl. linux
 }
 
 
-sub like_windows {	# read-only method! true for a windows-like platform
+=item OBJ->like_windows
+
+Read-only method advises if the current platform is associated with a Windows
+or Windows-like OS, incl. WSL or Cygwin.
+
+=cut
+
+sub like_windows {
 	my $self = shift;
 
 	return 1
@@ -642,6 +622,12 @@ sub like_windows {	# read-only method! true for a windows-like platform
 	return 0;
 }
 
+=item OBJ->mkdir(DIR)
+
+Checks the existence of the specfied B<DIR> and if it does
+not exist, then create it.
+
+=cut
 
 sub mkdir {
 	my $self = shift;
@@ -661,6 +647,11 @@ sub mkdir {
 	return 0;
 }
 
+=item OBJ->mkexec(PATH, ...)
+
+Enable all executable bits on the file privileges of the path(s) specified.
+
+=cut
 
 sub mkexec {
 	my $self = shift;
@@ -668,6 +659,11 @@ sub mkexec {
 	return $self->chmod("a+x", @_);
 }
 
+=item OBJ->mkro(PATH, ...
+
+Disable all writable bits on the file permissions of the path(s) specified.
+
+=cut
 
 sub mkro {
 	my $self = shift;
@@ -677,6 +673,11 @@ sub mkro {
 	return $self->chmod($perms, @_);
 }
 
+=item OBJ->mkwrite(PATH, ...)
+
+Enable user writable bits on the file privileges of the path(s) specified.
+
+=cut
 
 sub mkwrite {
 	my $self = shift;
@@ -684,6 +685,14 @@ sub mkwrite {
 	return $self->chmod("u+w", @_);
 }
 
+=item OBJ->on_cygwin
+
+Read-only method advises if the current platform is associated with 
+the hybrid B<Cygwin> platform, which has specific handling around storage
+which abstracts the B<Windows> drive assignment paradigm.  Used internally
+but may be useful outside this module.
+
+=cut
 
 sub on_cygwin {	# read-only method!
 	my $self = shift;
@@ -694,6 +703,11 @@ sub on_cygwin {	# read-only method!
 	return 0;
 }
 
+=item OBJ->on_linux
+
+Read-only method advises if the current platform is Linux.
+
+=cut
 
 sub on_linux {	# read-only method!
 	my $self = shift;
@@ -704,6 +718,11 @@ sub on_linux {	# read-only method!
 	return 0;
 }
 
+=item OBJ->on_windows
+
+Read-only method advises if the current platform is MS Windows. 
+
+=cut
 
 sub on_windows {	# read-only method!
 	my $self = shift;
@@ -714,6 +733,11 @@ sub on_windows {	# read-only method!
 	return 0;
 }
 
+=item OBJ->on_wsl
+
+Read-only method advises if the current platform is WSL.
+
+=cut
 
 sub on_wsl {	# read-only method!
 	my $self = shift;
@@ -746,8 +770,15 @@ sub on_wsl {	# read-only method!
 	return $f_wsl;	# flag for the WLS hybrid platform
 }
 
+=item OBJ->os_version
 
-sub os_version { # poll the unix release file; non-fatal; returns array of tokens
+Attempt to ascertain the operating system version.  This may involve polling
+the unix release file.  This routine is non-fatal. Returns an array of tokens
+containing an OS-specific list of version tokens.  WSL-friendly.
+
+=cut
+
+sub os_version {
 	my $self = shift;
 
 	my $cmd; if ($self->on_wsl) {
@@ -761,7 +792,7 @@ sub os_version { # poll the unix release file; non-fatal; returns array of token
 
 	my @issue = $self->cmd2array($cmd, 1);
 
-	push @issue, $self->null
+	push @issue, ""
 		unless (@issue);
 
 	shift @issue if ($self->on_windows);
@@ -771,6 +802,11 @@ sub os_version { # poll the unix release file; non-fatal; returns array of token
 	return @issue;
 }
 
+=item OBJ->pwd
+
+Coughs current directory (done implicitly by the B<godir> method).
+
+=cut
 
 sub pwd {
 	my $self = shift;
@@ -782,11 +818,17 @@ sub pwd {
 	return $pwd;
 }
 
+=item OBJ->rmdir(DIR)
+
+Checks the existence of the specfied F<DIR> and if it does
+not exist, then create it.
+
+=cut
 
 sub rmdir {
 	my $self = shift;
 	my $dn = shift;
-	confess "SYNTAX: rmdir(EXPR)" unless defined ($dn);
+	confess "SYNTAX: rmdir(DIR)" unless defined ($dn);
 
 	return( $self->cough("directory does not exist [$dn]"))
 		unless (-d $dn);
@@ -803,8 +845,13 @@ sub rmdir {
 	return 0;
 }
 
+=item OBJ->trim(EXPR, REGEXP)
 
-sub trim {	# trim the specified regexp from start and end of passed string
+Trim the specified regexp from start and end of passed string.
+
+=cut
+
+sub trim {
 	my $self = shift;
 	my $str = shift;
 	my $re = shift;
@@ -819,17 +866,27 @@ sub trim {	# trim the specified regexp from start and end of passed string
 	return $str;
 }
 
+=item OBJ->trim_ws(EXPR)
 
-sub trim_ws {	# trim trailing and leading whitespace in string passed
+Trim trailing and leading whitespace in string passed.
+
+=cut
+
+sub trim_ws {
 	my $self = shift;
 	my $str = shift;
 	confess "SYNTAX: trim_ws(EXPR)" unless (defined $str);
 
-	return $self->trim($str, '\s+');
+	return $self->trim($str, $self->re_whitespace);
 }
 
+=item OBJ->where(EXPR)
 
-sub where {	# try to find the executable passed in the path
+Try to find the executable identified by EXPR in the shell execution path
+
+=cut
+
+sub where {
 	my $self = shift;
 	my $exec = shift;
 	confess "SYNTAX: where(EXPR)" unless (defined $exec);
@@ -839,8 +896,14 @@ sub where {	# try to find the executable passed in the path
 	return $self->cmd2array($cmd, 1);
 }
 
+=item OBJ->wsl_dist
 
-sub wsl_dist {	# attempt to determine the WSL distro if appropriate
+Attempt to determine the WSL distribution (if appropriate).  Windows and WSL
+friendly, but will return undef on other platforms.  Non-fatal.
+
+=cut
+
+sub wsl_dist {
 	my $self = shift;
 
 	unless ($self->like_windows) {
@@ -857,7 +920,7 @@ sub wsl_dist {	# attempt to determine the WSL distro if appropriate
 		$self->wsl_active(1);
 
 		return $dist[0]
-			unless ($dist[0] eq $self->null);
+			unless ($dist[0] eq "");
 	}
 # ---- WSL version 2 ----
 # wsl --status
@@ -927,9 +990,11 @@ sub wsl_dist {	# attempt to determine the WSL distro if appropriate
 
 __END__
 
+=back
+
 =head1 VERSION
 
-___EUMM_VERSION___
+_IDE_REVISION_
 
 =head1 LICENSE
 
@@ -948,7 +1013,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 =head1 SEE ALSO
 
-L<perl>.
+L<perl>, L<Carp>, L<Data::Dumper>, L<Log::Log4perl>, L<Path::Tiny>,
+L<Text::Unidecode>.
 
 =cut
 

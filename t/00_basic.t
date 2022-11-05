@@ -191,7 +191,7 @@ __END__
 
 =head1 VERSION
 
-___EUMM_VERSION___
+_IDE_REVISION_
 
 =head1 AUTHOR
 
