@@ -142,7 +142,7 @@ use constant RE_WHITESPACE => '\s+';
 #our @ISA = qw(Exporter);
 our $AUTOLOAD;
 our @ISA;
-our $VERSION = '0.001';
+our $VERSION = sprintf "%d.%03d", q[_IDE_REVISION_] =~ /(\d+)/g;
 
 
 # --- package locals ---
@@ -241,7 +241,7 @@ sub Inherit {	# EXPERIMENTAL:  pass parent genes between offspring
 	my $count = 0; for my $attr (@attr) {
 		my $value = $sibling->$attr;
 
-		$self->log->debug("setting attr [$attr] to [$value]");
+#		$self->log->debug("setting attr [$attr] to [$value]")
 
 		$self->$attr($value);
 

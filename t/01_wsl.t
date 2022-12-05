@@ -59,21 +59,21 @@ for my $exec (qw/ find perl /) {
 # -------- os_version --------
 my @issue = $obj2->os_version;
 
-ok(scalar(@issue),				"os_version not null");
+ok(scalar(@issue),			"os_version has value");
 
 if ($obj1->on_cygwin) {
 
-	like($issue[0], qr/^CYGWIN_NT/,		"os_version on_cygwin");
+	like($issue[0], qr/^CYGWIN_NT/,	"os_version on_cygwin");
 
 } elsif ($obj1->on_wsl) {
 
-	isnt($issue[0], $obj1->null,		"os_version on_wsl");
+	isnt($issue[0], "",		"os_version on_wsl");
 
 } elsif ($obj1->on_windows) {
 
-	like($issue[0], qr/Windows/,		"os_version on_windows");
+	like($issue[0], qr/Windows/,	"os_version on_windows");
 } else {
-	isnt($issue[0], $obj1->null,		"os_version other");
+	isnt($issue[0], "",		"os_version other");
 #	contrived("os_version");
 }
 
@@ -82,7 +82,7 @@ if ($obj1->on_cygwin) {
 # need to run wsl_dist to get an updated view of "wsl_active"
 my $dist = $obj1->wsl_dist;
 
-$log->debug(sprintf "dist [%s]", defined($dist) ? $dist : $obj1->null);
+$log->debug(sprintf "dist [%s]", defined($dist) ? $dist : "EMPTY");
 
 my $wsl_active = $obj1->wsl_active;
 
