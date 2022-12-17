@@ -7,7 +7,7 @@ use strict;
 use Data::Dumper;
 use Logfer qw/ :all /;
 #use Log::Log4perl qw/ :easy /;
-use Test::More tests => 97;
+use Test::More tests => 103;
 use File::Basename;
 use File::Spec;
 
@@ -57,7 +57,7 @@ isa_ok($obj2, "Batch::Exec",	"class check $cycle"); $cycle++;
 
 # -------- simple attributes --------
 my @attr = $obj1->Attributes;
-my $attrs = 14;
+my $attrs = 15;
 is(scalar(@attr), $attrs,	"class attributes");
 is(shift @attr, "Batch::Exec",	"class okay");
 
@@ -90,6 +90,10 @@ for my $attr (@attr) {
         $cycle++;
 }
 
+
+# -------- Id --------
+is($obj1->Id, 1,			"object identifier one");
+is($obj2->Id, 2,			"object identifier two");
 
 # -------- Inherit --------
 is($obj1->Inherit($obj2), $attrs - 1,	"inherit same attribute count");
@@ -138,16 +142,16 @@ ok( $obj1->godir == 0,			"godir null");
 is( $obj1->pwd, $dn_cwd,		"pwd returned");
 
 
-# ---- is_extant ----
-is($obj2->is_extant(DN_INVALID), 0,	"is_extant invalid nonfatal");
-is($obj2->is_extant($dn_top), 1,	"is_extant top");
-is($obj2->is_extant($dn_tmp), 1,	"is_extant tmp");
+# ---- extant ----
+is($obj2->extant(DN_INVALID), 0,	"extant invalid nonfatal");
+is($obj2->extant($dn_top), 1,	"extant top");
+is($obj2->extant($dn_tmp), 1,	"extant tmp");
 
 my $fn_tmp1 = make_a_file($dn_tmp);
-is($obj1->is_extant($fn_tmp1), 1,	"is_extant new file cycle=$cycle"); $cycle++;
+is($obj1->extant($fn_tmp1, 'f'), 1,	"extant new file cycle=$cycle"); $cycle++;
 
 my $fn_tmp2 = make_a_file($dn_tmp);
-is($obj1->is_extant($fn_tmp2), 1,	"is_extant new file cycle=$cycle"); $cycle++;
+is($obj1->extant($fn_tmp2, 'f'), 1,	"extant new file cycle=$cycle"); $cycle++;
 
 
 # ----- delete -----

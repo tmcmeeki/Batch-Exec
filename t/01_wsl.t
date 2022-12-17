@@ -40,10 +40,10 @@ my $obj2 = Batch::Exec->new('echo' => 1);;
 isa_ok($obj2, "Batch::Exec",	"class check $cycle"); $cycle++;
 
 
-# -------- cmd2array --------
-ok(scalar( $obj1->cmd2array("dir")) >= 2,	"cmd2array returned data");
+# -------- c2a --------
+ok(scalar( $obj1->c2a("dir")) >= 2,	"c2a returned data");
 
-ok(scalar( $obj2->cmd2array("dir")) >= 2,	"cmd2array returned data");
+ok(scalar( $obj2->c2a("dir")) >= 2,	"c2a returned data");
 
 
 # -------- where --------

@@ -127,6 +127,8 @@ use Text::Unidecode;
 use constant CMD_OS_VERSION_WIN32 => "ver";
 use constant CMD_OS_VERSION_UX => "uname";
 
+use constant ENV_WSL_DIST => $ENV{'WSL_DISTRO_NAME'};	# inside WSL
+
 use constant FD_MAX => 2;	# see is_stdio() function
 
 #use constant PN_OS_ISSUE => File::Spec->catfile("", "etc", "issue");
@@ -149,7 +151,7 @@ our $VERSION = sprintf "%d.%03d", q[_IDE_REVISION_] =~ /(\d+)/g;
 my $_n_objects = 0;
 
 my %_attribute = (	# _attributes are restricted; no direct get/set
-	_id => undef,
+	_id => undef,		# an identifier for this widget
 	_inherent => [],	# genes that i'll pass on to my children
 	_n_objects => \$_n_objects,
 	log => get_logger("Batch::Exec"),
@@ -165,6 +167,7 @@ my %_attribute = (	# _attributes are restricted; no direct get/set
 	re_whitespace => RE_WHITESPACE,
 	stdfd => FD_MAX,
 	wsl_active => 0,	# flag shows if WSL installed. see wsl_dist
+	wsl_env => ENV_WSL_DIST,	# set only within WSL
 );
 
 
@@ -223,7 +226,35 @@ sub DESTROY {
 
 	#printf "DEBUG destroy object id [%s]\n", $self->{'_id'});
 
-	-- ${ $self->{_n_objects} };
+	$self->Id('del');
+}
+
+
+sub Id {	# EXPERIMENTAL:  keep track of identifiers
+	my $self = shift;
+	my $op = shift;
+
+	my $id; if (defined $op) {
+
+		if ($op eq 'add') {
+
+			$id = ++${ $self->{'_n_objects'} };
+
+			$self->{'_id'} = $id;
+
+		} elsif ($op eq 'del') {
+
+			--${ $self->{'_n_objects'} };
+
+		} else {
+			confess("invalid operator [$op]");
+		}
+	}
+	$id = $self->{'_id'};
+
+	$self->log->trace("id [$id]");
+
+	return $id;
 }
 
 
@@ -271,8 +302,7 @@ sub new {
 			$self->{'_have'}->{$attr} = $attr{'_have'}->{$attr};
 		}
 	}
-	$self->{'_id'} = ++${ $self->{'_n_objects'} };
-
+	$self->Id('add');
 
 	# ---- assign some defaults ----
 	my $tpn = Path::Tiny->new($0); $self->dn_start($tpn->cwd);
@@ -346,25 +376,6 @@ sub chmod {
 	return $count;
 }
 
-=item OBJ->ckdir_rx(DIR)
-
-Truncate the string passed.  Optionally pass a length (a default applies).
-
-=cut
-
-sub ckdir_rx { 
-	my $self = shift;
-	my $dn = shift;
-
-	confess "SYNTAX: ckdir_rx(DIR)" unless (defined $dn);
-
-	return 1
-		if (-d $dn && -r $dn && -x $dn);
-
-	return 0;
-}
-
-
 =item OBJ->ckdir(DIR)
 
 Checks the existence of the directory specfied by DIR.
@@ -376,35 +387,19 @@ sub ckdir {
 	my $dn = shift;
 	confess "SYNTAX: ckdir(DIR)" unless defined ($dn);
 
-	return 0 if ($self->ckdir_rx($dn));
+	return 0 if ($self->is_rx($dn));
 
-	return $self->cough("directory [$dn] does not exist");
+	return $self->cough("directory [$dn] not accessible");
 }
 
-=item OBJ->ckdir_rwx(DIR)
-
-Truncate the string passed.  Optionally pass a length (a default applies).
-
-=cut
-
-sub ckdir_rwx { 
-	my $self = shift;
-	my $dn = shift;
-
-	return 1
-		if ($self->ckdir_rx($dn) && -w $dn);
-
-	return 0;
-}
-
-=item OBJ->cmd2array(EXPR, [BOOLEAN])
+=item OBJ->c2a(EXPR, [BOOLEAN])
 
 Execute the command passed and return output in an array, optionally stripping
 blank tokens (if the boolean flagged passed is true).
 
 =cut
 
-sub cmd2array {	# execute the command passed and return output in an array
+sub c2a {	# execute the command passed and return output in an array
 	my $self = shift;
 	my $cmd = shift;
 	my $strip = shift;	# flag to remove empty bits
@@ -526,7 +521,7 @@ sub godir {
 	my $self = shift;
 	my $dn = (@_) ? shift : $self->dn_start;
 
-	$self->ckdir_rx($dn) || return($self->cough("invalid directory [$dn]"));
+	$self->is_rx($dn) || return($self->cough("invalid directory [$dn]"));
 
 	chdir($dn) || return($self->cough("chdir($dn) failed"));
 
@@ -535,23 +530,71 @@ sub godir {
 	return 0;
 }
 
-=item OBJ->is_extant(PATH)
+=item OBJ->extant(PATH, [TYPE])
 
 Checks if the file specified by PATH exists. Subject to fatal processing.
+The TYPE parameter defaults to 'd' for directory, but can be overridden to 'f'.
 
 =cut
 
-sub is_extant {
+sub extant {
 	my $self = shift;
 	my $pn = shift;
-	confess "SYNTAX: is_extant(EXPR)" unless defined ($pn);
+	my $type = shift; $type = 'd' unless defined($type);
+	confess "SYNTAX: extant(EXPR)" unless defined ($pn);
 
-	return 1
-		if (-e $pn);
+	my $rv; if ($type eq 'd') {
+
+		$rv = (-d $pn);
+
+	} elsif ($type eq 'f') {
+
+		$rv = (-f $pn);
+
+	} else {
+
+		$self->log->logconfess("invalid type [$type]");
+	}
+	return 1 if ($rv);
 
 	$self->cough("does not exist [$pn]");
 
 	return 0;	# reverse polarity
+}
+
+=item OBJ->is_rwx(PATH, [TYPE])
+
+Check if the filesystem entry PATH is readable, writable and executable.
+
+=cut
+
+sub is_rwx { 
+	my $self = shift;
+	my $pn = shift;
+	my $type = shift;
+
+	return 1
+		if ($self->is_rx($pn) && -w $pn);
+
+	return 0;
+}
+
+=item OBJ->is_rx(PATH, [TYPE])
+
+Check if the filesystem entry PATH is readable and executable.
+
+=cut
+
+sub is_rx { 
+	my $self = shift;
+	my $pn = shift;
+	my $type = shift;
+	confess "SYNTAX: is_rx(PATH)" unless (defined $pn);
+
+	return 1
+		if ($self->extant($pn, $type) && -r $pn && -x $pn);
+
+	return 0;
 }
 
 =item OBJ->is_stdio(FILEHANDLE)
@@ -601,7 +644,6 @@ sub like_unix {
 	}
 	return 0;
 }
-
 
 =item OBJ->like_windows
 
@@ -745,6 +787,8 @@ sub on_wsl {	# read-only method!
 	return 0	# need to check if actually on WSL
 		unless ($self->on_linux);
 
+	return 1 if ($self->wsl_env);
+
 	my $pn; if (-f $self->pn_release) {
 
 		$pn = $self->pn_release;
@@ -790,16 +834,28 @@ sub os_version {
 		$cmd = $self->cmd_os_version;
 	}
 
-	my @issue = $self->cmd2array($cmd, 1);
+	my @lines;
 
-	push @issue, ""
-		unless (@issue);
+	if ($self->wsl_env) {
 
-	shift @issue if ($self->on_windows);
+		$self->log->info("retrieving WSL distro from environment");
 
-	$self->log->debug(sprintf "issue [%s]", Dumper(\@issue));
+		push @lines, $self->wsl_env;
+	} else {
 
-	return @issue;
+		$self->log->info("retrieving WSL distro from filesystem");
+
+		@lines = $self->c2a($cmd, 1);
+	}
+
+	push @lines, ""
+		unless (@lines);
+
+	shift @lines if ($self->on_windows);
+
+	$self->log->trace(sprintf "lines [%s]", Dumper(\@lines));
+
+	return @lines;
 }
 
 =item OBJ->pwd
@@ -893,7 +949,7 @@ sub where {
 
 	my $cmd = join(' ', $self->cmd_os_where, $exec);
 
-	return $self->cmd2array($cmd, 1);
+	return $self->c2a($cmd, 1);
 }
 
 =item OBJ->wsl_dist
@@ -927,7 +983,7 @@ sub wsl_dist {
 # Default Distribution: Ubuntu
 # Default Version: 2
 
-	my @wls = $self->cmd2array("wsl --status", 1);
+	my @wls = $self->c2a("wsl --status", 1);
 
 	if (@wls) {
 
@@ -965,7 +1021,7 @@ sub wsl_dist {
 			$self->log->info("trying alternative WSL method")
 				if ($self->{'echo'});
 
-			@wls = $self->cmd2array("wslconfig /l", 1);
+			@wls = $self->c2a("wslconfig /l", 1);
 # wslconfig /l
 # 
 # Windows Subsystem for Linux Distributions:
