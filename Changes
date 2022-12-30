@@ -1,5 +1,16 @@
 Revision history for Perl extension Batch::Exec.
 
+TO-DO:
+
+	- user name
+
+	- move winuser from Batch-Exec-Path
+
+	- have a shell default for platform, move powershell.exe from BEP
+
+	- c2a command should cough after readpipe
+
+
 0.01  Wed Mar 29 19:25:11 2017
 	- original version; created by h2xs 1.23 with options
 		-AX --skip-exporter --use-new-tests -n Batch::Exec -b 5.10.0

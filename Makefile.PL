@@ -11,6 +11,8 @@ WriteMakefile(
     PREREQ_PM         => {
         'Carp' => '0',
         'Data::Dumper' => '0',
+        'Hash::Merge' => '0',
+        'List::Util' => '0',
 #        'Log::Log4perl' => '0',
         'Logfer' => '0',
         'Path::Tiny' => '0',

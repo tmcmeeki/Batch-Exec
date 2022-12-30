@@ -3,9 +3,11 @@ Changes
 IDE_VERSION
 LICENSE
 MANIFEST
+Makefile
 Makefile.PL
 README
 README.md
 lib/Batch/Exec.pm
 t/00_basic.t
-t/01_wsl.t
+t/01_platform.t
+t/02_lov.t

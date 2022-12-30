@@ -7,7 +7,7 @@ use strict;
 use Data::Dumper;
 use Logfer qw/ :all /;
 #use Log::Log4perl qw/ :easy /;
-use Test::More tests => 103;
+use Test::More tests => 126;
 use File::Basename;
 use File::Spec;
 
@@ -91,6 +91,17 @@ for my $attr (@attr) {
 }
 
 
+# -------- Has --------
+SKIP: {
+	skip "Has syntax", 1;
+
+	is($obj1->Has, 1,		"object Has none");
+}
+for my $attr (@attr) {
+	is($obj1->Has($attr), 1,	"object Has $attr");
+}
+
+
 # -------- Id --------
 is($obj1->Id, 1,			"object identifier one");
 is($obj2->Id, 2,			"object identifier two");
@@ -170,6 +181,23 @@ $fc = 0; for (@delete) {
 is($fc, 0, 				"after delete $cycle"); $cycle++;
 
 
+# ----- dump -----
+like($obj1->dump("xxx"), qr{scalar.+xxx},		"dump scalar");
+like($obj1->dump("xxx", "yyy"), qr{scalar.+xxx.+yyy},	"dump scalar extra");
+
+like($obj1->dump($obj1), qr{bless},			"dump object");
+
+$obj1->dn_start([qw/ hello world /]);
+like($obj1->dump("dn_start"), qr{dn_sta.+hel.+world},	"dump attribute");
+
+is($obj1->dump("mask %s %d %.2f", qw/ a 1.0 1.0 /), "mask a 1 1.00",	"dump sprintf");
+
+like($obj1->dump([qw/ foo bar /]), qr{foo.+bar},	"dump arrayref");
+
+my %dump = ('foo' => 'bar', 'bar' => 'foo', 'hello' => 'world', 'world' => 'hello');
+like($obj1->dump(\%dump), qr{ba.+fo.+ba.+he.+wo.+he},	"dump hashref");
+
+
 # ----- rmdir -----
 ok( $obj1->rmdir($dn_tmp) == 0,		"rmdir ok");
 isnt( -d $dn_tmp, 0,			"rmdir check");
@@ -185,6 +213,15 @@ ok(length($obj1->pn_release) > 5,	"pn_release string");
 
 ok(defined($obj1->pn_version),		"pn_version defined");
 ok(length($obj1->pn_version) > 5,	"pn_version string");
+
+
+#-------- winuser --------
+if ($obj1->like_windows) {
+
+	like($obj1->winuser, qr/\w+/,	"winuser like_windows");
+} else {
+	is($obj1->winuser, undef,	"winuser other");
+}
 
 
 __END__

@@ -1,13 +1,13 @@
 #!/usr/bin/perl
 #
-# 01_wsl.t - test harness for the Batch Exec framework: WSL
+# 01_platform.t - test harness for the Batch Exec framework: OS and platform
 #
 use strict;
 
 use Data::Dumper;
 use Logfer qw/ :all /;
 #use Log::Log4perl qw/ :easy /;
-use Test::More tests => 12;
+use Test::More tests => 13;
 use File::Basename;
 use File::Spec;
 
@@ -36,7 +36,7 @@ sub contrived {	# execute a dummy (contrived test)
 my $obj1 = Batch::Exec->new;
 isa_ok($obj1, "Batch::Exec",	"class check $cycle"); $cycle++;
 
-my $obj2 = Batch::Exec->new('echo' => 1);;
+my $obj2 = Batch::Exec->new('echo' => 1);
 isa_ok($obj2, "Batch::Exec",	"class check $cycle"); $cycle++;
 
 
@@ -78,7 +78,11 @@ if ($obj1->on_cygwin) {
 }
 
 
-# -------- wsl_dist > wsl_active --------
+# -------- whoami --------
+isnt($obj1->whoami, "",			"whoami");
+
+
+# -------- wsl_dist & wsl_active --------
 # need to run wsl_dist to get an updated view of "wsl_active"
 my $dist = $obj1->wsl_dist;
 
@@ -135,7 +139,7 @@ __END__
 
 =head1 DESCRIPTION
 
-01_wsl.t - test harness for the Batch Exec framework
+01_platform.t - test harness for the Batch Exec framework
 
 =head1 VERSION
 

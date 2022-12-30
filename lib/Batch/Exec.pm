@@ -39,6 +39,7 @@ There are several key functions of a batch executive:
  8. Fail-safe directory manipulation and filesystem privilege assignment.
  9. Common text handling functions, platform determination and behaviour.
 10. Provide for basic integration to a scheduling facility.
+11. Basic data validation via list-of-value lookup.
 
 Such an executive relies on many extant Perl libraries to do much of its 
 processing, but wraps consistent handling around their functions.
@@ -117,6 +118,8 @@ use utf8;
 # --- includes ---
 use Carp qw(cluck confess);
 use Data::Dumper;
+use Hash::Merge;
+use List::Util qw/ shuffle /;
 #use Log::Log4perl qw/ get_logger /;
 use Logfer qw/ :all /;
 use Path::Tiny;
@@ -149,12 +152,15 @@ our $VERSION = sprintf "%d.%03d", q[_IDE_REVISION_] =~ /(\d+)/g;
 
 # --- package locals ---
 my $_n_objects = 0;
+my %_h_lov;			# global lists of values, see lov() method
 
 my %_attribute = (	# _attributes are restricted; no direct get/set
 	_id => undef,		# an identifier for this widget
 	_inherent => [],	# genes that i'll pass on to my children
 	_n_objects => \$_n_objects,
+	_lov => \%_h_lov,	# class-level LoV register.
 	log => get_logger("Batch::Exec"),
+#	dump => undef,
 	autoheader => 0,	# automatically put a header on any files
 	cmd_os_version => undef,
 	cmd_os_where => undef,
@@ -169,6 +175,12 @@ my %_attribute = (	# _attributes are restricted; no direct get/set
 	wsl_active => 0,	# flag shows if WSL installed. see wsl_dist
 	wsl_env => ENV_WSL_DIST,	# set only within WSL
 );
+
+
+# --- package methods ---
+INIT {
+	srand(time);	# see lov() method, action = _random
+};
 
 
 sub AUTOLOAD {
@@ -203,12 +215,12 @@ sub Attributes {
 	my $self = shift;
 	my $class = ref($self);
 
-	my (@have, @hide); for my $method (sort keys %{ $self->{'_have'} }) {
+	my (@have, @hide); for my $attr (sort keys %{ $self->{'_have'} }) {
 
-		if ($self->{'_have'}->{$method}) {
-			push @have, $method;
+		if ($self->{'_have'}->{$attr}) {
+			push @have, $attr;
 		} else {
-			push @hide, $method;
+			push @hide, $attr;
 		}
 	}
 	$self->log->info(sprintf "am [$class] have [%s] hide [%s]",
@@ -229,6 +241,22 @@ sub DESTROY {
 	$self->Id('del');
 }
 
+=item OBJ->Has(ATTRIBUTE)
+
+Checks if the current object has the specified ATTRIBUTE.
+Returns a BOOLEAN.
+
+=cut
+
+sub Has {
+	my $self = shift;
+	my $attr = shift;
+	confess "SYNTAX Has(EXPR)" unless defined($attr);
+
+	return 1 if exists($self->{'_have'}->{$attr});
+
+	return 0;
+}
 
 sub Id {	# EXPERIMENTAL:  keep track of identifiers
 	my $self = shift;
@@ -342,7 +370,7 @@ Apply the file permissions specificed to the path(s).
 sub chmod {
 	my $self = shift;
 	my $perms = shift;
-	confess "SYNTAX: chmod(PERMS, PATH, ...)" unless (@_);
+	confess "SYNTAX chmod(PERMS, PATH, ...)" unless (@_);
 
 	my @dne;	# a list of paths which do not exist
 	my @fail;	# a list of paths for which chmod did not work
@@ -385,7 +413,7 @@ Checks the existence of the directory specfied by DIR.
 sub ckdir {
 	my $self = shift;
 	my $dn = shift;
-	confess "SYNTAX: ckdir(DIR)" unless defined ($dn);
+	confess "SYNTAX ckdir(DIR)" unless defined ($dn);
 
 	return 0 if ($self->is_rx($dn));
 
@@ -468,7 +496,7 @@ Strip CR from the EXPR passed; useful for converting DOS text records.
 sub crlf { #	remove the CR from DOS CRLF (end-of-line string)
 	my $self = shift;
 	my $str = shift;
-	confess "SYNTAX: crlf(EXPR)" unless (defined $str);
+	confess "SYNTAX crlf(EXPR)" unless (defined $str);
 
 	my $len1 = length($str);
 
@@ -490,7 +518,7 @@ Delete a file or directory.
 sub delete {
 	my $self = shift;
 	my $pn = shift;
-	confess "SYNTAX: delete(EXPR)" unless defined ($pn);
+	confess "SYNTAX delete(EXPR)" unless defined ($pn);
 
 	if (-d $pn) {
 
@@ -510,6 +538,88 @@ sub delete {
 	return 0;
 }
 
+=item OBJ->dump(EXPR, ...)
+
+A wrapper for Data::Dumper to flatten the output, which may be a scalar,
+structure, or attribute.  If the latter, this will make a self-referencial call.
+
+=cut
+
+sub dump {
+	my $self = shift;
+	confess "SYNTAX dump(EXPR)" unless (@_);
+	my $data = shift;
+	my $pad = ", ";
+
+	my $nice = ""; if ($self->Has($data)) {
+
+		no strict 'refs';
+
+		my $value = $self->$data;
+
+		$self->log->trace("data [$data] value [$value]");
+
+		my $dump = Data::Dumper->new($value);
+
+		$dump->Indent(0);
+		$dump->Pad($pad);
+		$dump->Terse(1);
+
+		my $stuff = $dump->Dump;
+		$stuff =~ s/,//;
+
+		$nice = sprintf "attribute $data [%s ]", $stuff;
+
+	} else {
+		my $ref = ref($data);
+
+		$self->log->trace("data [$data] ref [$ref]");
+
+		if ($ref eq '') {
+			if ($data =~ /%/) {	# assume printf mask
+				$nice = sprintf $data, @_;
+			} else {
+				$nice = sprintf "scalar [%s]", join(' ', $data, @_);
+			}
+		} elsif ($ref eq 'ARRAY') {
+
+			my $dump = Data::Dumper->new($data);
+
+			$dump->Indent(0);
+			$dump->Pad($pad);
+			$dump->Terse(1);
+
+			my $stuff = $dump->Dump;
+			$stuff =~ s/,//;
+
+			$nice = sprintf "%s [%s ]", lc($ref), $stuff;
+
+		} elsif ($ref eq 'HASH') {
+
+			my $dump = Data::Dumper->new([$data]);
+
+			$dump->Sortkeys(1);
+			$dump->Terse(1);
+
+			my $stuff = $dump->Dump;
+			$stuff =~ s/\n/ /gm;
+			$stuff =~ s/\s+/ /g;
+
+			$nice = sprintf "%s %s", lc($ref), $stuff;
+		} else {
+			my $dump = Data::Dumper->new([$data]);
+			my $what = (@_) ? join(' ', @_) : "object $ref";
+
+			$dump->Sortkeys(1);
+			$dump->Terse(1);
+
+			$nice = sprintf "$what " . $dump->Dump;
+		}
+	}
+#	$self->log->debug($nice);
+
+	return $nice;
+}
 
 =item OBJ->godir(DIR)
 
@@ -541,11 +651,15 @@ sub extant {
 	my $self = shift;
 	my $pn = shift;
 	my $type = shift; $type = 'd' unless defined($type);
-	confess "SYNTAX: extant(EXPR)" unless defined ($pn);
+	confess "SYNTAX extant(EXPR)" unless defined ($pn);
 
 	my $rv; if ($type eq 'd') {
 
 		$rv = (-d $pn);
+
+	} elsif ($type eq 'e') {
+
+		$rv = (-e $pn);
 
 	} elsif ($type eq 'f') {
 
@@ -553,7 +667,7 @@ sub extant {
 
 	} else {
 
-		$self->log->logconfess("invalid type [$type]");
+		$self->cough("invalid type [$type]");
 	}
 	return 1 if ($rv);
 
@@ -589,7 +703,7 @@ sub is_rx {
 	my $self = shift;
 	my $pn = shift;
 	my $type = shift;
-	confess "SYNTAX: is_rx(PATH)" unless (defined $pn);
+	confess "SYNTAX is_rx(PATH)" unless (defined $pn);
 
 	return 1
 		if ($self->extant($pn, $type) && -r $pn && -x $pn);
@@ -608,7 +722,7 @@ Returns FALSE otherwise.
 sub is_stdio {	# is a standard file descriptor, e.g. 0, 1, 2
 	my $self = shift;
 	my $fh = shift;
-	confess "SYNTAX: is_stdio(FILEHANDLE)" unless defined($fh);
+	confess "SYNTAX is_stdio(FILEHANDLE)" unless defined($fh);
 
 	my $fno = fileno($fh);
 
@@ -662,6 +776,160 @@ sub like_windows {
 		if ($self->on_wsl);
 
 	return 0;
+}
+
+=item OBJ->lov(ACTION, CLASS, ...)
+
+Register, query or set a list of values (LoV) identifiable by CLASS.
+Many LoVs can be maintained via this method, which operates globally within
+the class.
+
+Actions, addtional parameters and effects are tabled below:
+
+  _clear    (none)	remove the LoV for the specified class.
+  _default  ATTR, VALUE	set attribute to value if not already set.
+  _lookup   KEY		lookup the description for the key.
+  _lov	    (none)	provide the available keys for this class.
+  _random   ATTR	set attribute to a random value.
+  _register HASHREF	register a new class of key/value pairs.
+  _set	    ATTR, VALUE	set attribute to value.
+
+Return values vary as follows:
+
+  _clear, _register the number of keys in the class (before, or after).
+  _default	    the current or revised attribute value.
+  _lookup	    the corresponding description for the key.
+  _lov		    a sorted array of keys.
+  _random, _set	    the revised attribute value.
+
+Note that the _register action if called twice for the same class will
+attempt a hash merge to provide the union of the dataset. Redefinition of
+the class can be achieved with a prerequisite _clear action.
+
+=cut
+
+sub lov {
+	my $self = shift;
+	my $action = shift;
+	my $class = shift;
+	my $s_msg = "SYNTAX lov(ACTION, CLASS%s)";
+	confess sprintf($s_msg, "") unless (defined($class) && defined($action));
+	$self->log->trace("action [$action] class [$class]");
+
+	my $lov = $self->{'_lov'};
+	my @lov;
+
+	my $exists = 0; if (exists $lov->{$class}) {
+
+		$exists = 1;
+		@lov = sort keys %{ $lov->{$class} };
+
+		$self->log->trace($self->dump(\@lov, '@lov'));
+	}
+
+	# actions which require no further parameters
+
+	if ($action eq '_clear' || $action eq '_lov') {
+
+		$self->cough("no such LoV exists [$class]") unless($exists);
+
+		return @lov if ($action eq '_lov');
+
+		delete $lov->{$class};
+
+		return scalar(@lov);
+	}
+
+	# registration needs a class hash (key / values)
+
+	if ($action eq '_register') {
+
+		my $rh = shift; $self->cough("must pass a hashref")
+			unless (defined($rh) && ref($rh) eq 'HASH');
+
+		if (exists $lov->{$class}) {
+
+			$self->log->info("merging $class");
+
+			my $ohm = Hash::Merge->new;
+
+			my %c = %{ $ohm->merge($lov->{$class}, $rh) };
+
+			$lov->{$class} = { %c };
+		} else {
+			$self->log->info("registering $class");
+
+			$lov->{$class} = { %$rh };
+		}
+		$self->log->trace($self->dump($lov->{$class}));
+
+		return scalar(keys %{ $lov->{$class} });
+	}
+	
+	# query actions needing a key to be specified
+
+	my $missing = sprintf "does not exist in $class LoV %s", $self->dump(\@lov);
+	if ($action eq '_lookup') {
+
+		my $key = shift;
+
+		confess(sprintf $s_msg, ", KEY") unless defined($key);
+
+		$self->cough("key [$key] $missing")
+			unless exists $lov->{$class}->{$key};
+
+		return $lov->{$class}->{$key};
+	}
+
+	# actions needing an attribute to be specified
+
+	my $attr = shift;
+	confess(sprintf $s_msg, ", ATTRIBUTE") unless defined($attr);
+
+	$self->cough("class does not have an attribute named [$attr]")
+		unless ($self->Has($attr));
+
+	no strict 'refs';
+
+	if ($action eq '_random') {
+
+		my @mix = shuffle(@lov);
+
+		my $value = shift @mix;
+
+		$self->log->info("randomising attribute [$attr] to [$value]");
+
+		return $self->$attr($value);
+	}
+	
+	# actions needing a value to be specified
+	my $value = shift;
+	confess(sprintf $s_msg, ", ATTRIBUTE, VALUE") unless defined($value);
+
+	$self->cough("value [$value] $missing")
+		unless exists $lov->{$class}->{$value};
+
+	if ($action eq '_default') {
+
+		if (defined $self->$attr) {
+
+			$self->log->info("skipping attribute default for [$attr]");
+			return $self->$attr;
+		}
+		$self->log->info("defaulting attribute [$attr] to [$value]");
+
+		return $self->$attr($value);
+	}
+
+	if ($action eq '_set') {
+
+		$self->log->info("setting [$attr] to [$value]");
+
+		return $self->$attr($value);
+	}
+	$self->cough("invalid action [$action]");
+
+	return undef;
 }
 
 =item OBJ->mkdir(DIR)
@@ -797,10 +1065,10 @@ sub on_wsl {	# read-only method!
 
 		$pn = $self->pn_version;
 	} else {
-		$self->log->logconfess("unable to determine platform [$^O]");
+		$self->cough("unable to determine platform [$^O]");
 	}
 
-	open(my $fh, "<$pn") || $self->log->logconfess("open($pn) failed");
+	open(my $fh, "<$pn") || $self->cough("open($pn) failed");
 
 	my $f_wsl = 0; while (<$fh>) {
 
@@ -884,7 +1152,7 @@ not exist, then create it.
 sub rmdir {
 	my $self = shift;
 	my $dn = shift;
-	confess "SYNTAX: rmdir(DIR)" unless defined ($dn);
+	confess "SYNTAX rmdir(DIR)" unless defined ($dn);
 
 	return( $self->cough("directory does not exist [$dn]"))
 		unless (-d $dn);
@@ -911,7 +1179,7 @@ sub trim {
 	my $self = shift;
 	my $str = shift;
 	my $re = shift;
-	confess "SYNTAX: trim(EXPR, REGEXP)" unless (defined $re && defined $str);
+	confess "SYNTAX trim(EXPR, REGEXP)" unless (defined $re && defined $str);
 	$self->log->trace("BEF str [$str] re [$re]");
 
 	$str =~ s/^$re//;	# prune leading regexp
@@ -931,7 +1199,7 @@ Trim trailing and leading whitespace in string passed.
 sub trim_ws {
 	my $self = shift;
 	my $str = shift;
-	confess "SYNTAX: trim_ws(EXPR)" unless (defined $str);
+	confess "SYNTAX trim_ws(EXPR)" unless (defined $str);
 
 	return $self->trim($str, $self->re_whitespace);
 }
@@ -945,11 +1213,68 @@ Try to find the executable identified by EXPR in the shell execution path
 sub where {
 	my $self = shift;
 	my $exec = shift;
-	confess "SYNTAX: where(EXPR)" unless (defined $exec);
+	confess "SYNTAX where(EXPR)" unless (defined $exec);
 
 	my $cmd = join(' ', $self->cmd_os_where, $exec);
 
 	return $self->c2a($cmd, 1);
+}
+
+=item OBJ->whoami
+
+Returns the name of the current user, and returns it.  On Windows platforms
+this will just make a call to the B<winuser> method, otherwise a PERL-native
+method is used.
+
+=cut
+
+sub whoami {
+	my $self = shift;
+
+	my $whoami; if ($self->on_windows) {
+
+		$whoami = $self->winuser;
+	} else {
+		$whoami = getpwuid($<);
+	}
+	$self->log->debug("whoami [$whoami]");
+
+	return $whoami;
+}
+
+=item OBJ->winuser
+
+Returns the name of the current Windows user (Windows-like platforms only).
+This makes a call to Powershell.
+If that is not possible or returns no value then returns undef.
+See also B<whoami>.
+
+=cut
+
+sub winuser {
+	my $self = shift;
+
+	$self->echo(1);	# debugging
+	my $cmd; if ($self->on_windows) {
+
+		$cmd = q{powershell.exe "$env:UserName"};
+
+	} elsif ($self->like_windows) {
+
+		$cmd = q{powershell.exe '$env:UserName'};
+	} else {
+		$cmd = q{pwsh '$env:UserName'};
+	}
+	my @result = $self->c2a($cmd);
+
+	$self->log->warn("[$cmd] produced no result")
+		unless (scalar @result);
+
+	$self->log->debug(sprintf "result [%s]", Dumper(\@result));
+
+	return $result[0] if (@result);
+
+	return undef;
 }
 
 =item OBJ->wsl_dist
