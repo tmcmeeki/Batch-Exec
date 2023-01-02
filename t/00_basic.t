@@ -7,7 +7,7 @@ use strict;
 use Data::Dumper;
 use Logfer qw/ :all /;
 #use Log::Log4perl qw/ :easy /;
-use Test::More tests => 126;
+use Test::More tests => 130;
 use File::Basename;
 use File::Spec;
 
@@ -183,19 +183,23 @@ is($fc, 0, 				"after delete $cycle"); $cycle++;
 
 # ----- dump -----
 like($obj1->dump("xxx"), qr{scalar.+xxx},		"dump scalar");
-like($obj1->dump("xxx", "yyy"), qr{scalar.+xxx.+yyy},	"dump scalar extra");
+like($obj1->dump("xxx", "yyy"), qr{yyy.+scalar.+xxx},	"dump scalar extra");
 
 like($obj1->dump($obj1), qr{bless},			"dump object");
+like($obj1->dump($obj1, "yyy"), qr{yyy.+\sobject},	"dump object extra");
 
 $obj1->dn_start([qw/ hello world /]);
-like($obj1->dump("dn_start"), qr{dn_sta.+hel.+world},	"dump attribute");
+like($obj1->dump("dn_start"), qr{dn_sta.+hel.+world},	"dump attr");
+like($obj1->dump("dn_start", "yyy"), qr{yyy.+dn.+hel},	"dump attr extra");
 
 is($obj1->dump("mask %s %d %.2f", qw/ a 1.0 1.0 /), "mask a 1 1.00",	"dump sprintf");
 
 like($obj1->dump([qw/ foo bar /]), qr{foo.+bar},	"dump arrayref");
+like($obj1->dump([qw/ foo bar /], "yyy"), qr{yyy.+foo},	"dump arrayref extra");
 
 my %dump = ('foo' => 'bar', 'bar' => 'foo', 'hello' => 'world', 'world' => 'hello');
 like($obj1->dump(\%dump), qr{ba.+fo.+ba.+he.+wo.+he},	"dump hashref");
+like($obj1->dump(\%dump, "yyy"), qr{yyy.+ba.+fo.+ba},	"dump hashref extra");
 
 
 # ----- rmdir -----

@@ -104,8 +104,11 @@ The maximum value of a standard file descriptor (i.e. defaults to stderr).
 =item OBJ->wsl_active
 
 This flag defaults to false, but will get updated to true if the wsl_dist() 
-method find an installed WSL distribution.  Note that WSL can be installed
-but has no active distribution. 
+
+=item OBJ->wsl_env
+
+Evaluates the shell variable WSL_DISTRO_NAME, which is available inside an
+executing WSL instance.
 
 =back
 
@@ -202,14 +205,30 @@ sub AUTOLOAD {
 	}
 }
 
+=head2 CLASS METHODS
 
-sub Alive { 	# check status of object, i.e in destruction
+=over 4
+
+=item OBJ->Alive
+
+Check status of object, i.e returns true if in destruction phase,
+and false otherwise.
+
+=cut
+
+sub Alive {
 	return 1
 		if (${^GLOBAL_PHASE} ne 'DESTRUCT');
 
 	return 0;
 }
 
+=item OBJ->Attributes
+
+List the attributes applicable for this class.  Returns the list
+of attributes preceded by the class name itself.
+
+=cut
 
 sub Attributes {
 	my $self = shift;
@@ -258,7 +277,16 @@ sub Has {
 	return 0;
 }
 
-sub Id {	# EXPERIMENTAL:  keep track of identifiers
+=item OBJ->Id([EXPR])
+
+EXPERIMENTAL Keep track of object identifiers. Returns the current object id.
+If EXPR is passed it acts as an operator to "add" an object id (increment)
+or "del" (decrement) an object id. Both these operations act on a counter
+maintained at class-level.
+
+=cut
+
+sub Id {
 	my $self = shift;
 	my $op = shift;
 
@@ -285,8 +313,14 @@ sub Id {	# EXPERIMENTAL:  keep track of identifiers
 	return $id;
 }
 
+=item OBJ->Inherit(OBJECT)
 
-sub Inherit {	# EXPERIMENTAL:  pass parent genes between offspring
+Pass parent genes between offspring, basically sets the attributes in the
+current object from another object, based on the inherited attribute list.
+
+=cut
+
+sub Inherit {
 	my $self = shift;
 	my $sibling = shift;
 	confess "FATAL you must specify an object from which to inherit"
@@ -357,7 +391,9 @@ sub new {
 	return $self;
 }
 
-=head2 METHODS
+=back
+
+=head2 OBJECT METHODS
 
 =over 4
 
@@ -542,22 +578,29 @@ sub delete {
 
 A wrapper for Data::Dumper to flatten the output, which may be a scalar,
 structure, or attribute.  If the latter, this will make a self-referencial call.
+For scalars, the string is inspected for printf-style arguments and if so
+all remaining arguments to this method are passed into it.  Otherwise any
+additional parameters to this are assumed to be descriptive and will be
+prepended to the resultant string.
 
 =cut
 
 sub dump {
 	my $self = shift;
 	confess "SYNTAX dump(EXPR)" unless (@_);
-	my $data = shift;
+	my $thing = shift;
+	my $desc = (@_) ? join(' ', @_, "") : "";
 	my $pad = ", ";
 
-	my $nice = ""; if ($self->Has($data)) {
+	my $strip = 1;
+
+	my $nice; if ($self->Has($thing)) {
 
 		no strict 'refs';
 
-		my $value = $self->$data;
+		my $value = $self->$thing;
 
-		$self->log->trace("data [$data] value [$value]");
+		$self->log->trace("thing [$thing] value [$value]");
 
 		my $dump = Data::Dumper->new($value);
 
@@ -565,56 +608,65 @@ sub dump {
 		$dump->Pad($pad);
 		$dump->Terse(1);
 
-		my $stuff = $dump->Dump;
-		$stuff =~ s/,//;
+		my $data = $dump->Dump;
+		$data =~ s/,//;
 
-		$nice = sprintf "attribute $data [%s ]", $stuff;
+		$nice = sprintf "${desc}attribute $thing [%s]", $data;
 
 	} else {
-		my $ref = ref($data);
+		my $ref = ref($thing);
 
-		$self->log->trace("data [$data] ref [$ref]");
+		$self->log->trace("thing [$thing] ref [$ref]");
 
 		if ($ref eq '') {
-			if ($data =~ /%/) {	# assume printf mask
-				$nice = sprintf $data, @_;
+			if ($thing =~ /%/) {	# assume printf mask
+				$nice = sprintf $thing, @_;
 			} else {
-				$nice = sprintf "scalar [%s]", join(' ', $data, @_);
+				$nice = sprintf "%sscalar [%s]", $desc, $thing;
 			}
 		} elsif ($ref eq 'ARRAY') {
 
-			my $dump = Data::Dumper->new($data);
+			my $dump = Data::Dumper->new($thing);
 
 			$dump->Indent(0);
 			$dump->Pad($pad);
 			$dump->Terse(1);
 
-			my $stuff = $dump->Dump;
-			$stuff =~ s/,//;
+			my $data = $dump->Dump;
+			$data =~ s/,//;
 
-			$nice = sprintf "%s [%s ]", lc($ref), $stuff;
+			$nice = sprintf "%s%s [%s]", $desc, lc($ref), $data;
 
 		} elsif ($ref eq 'HASH') {
 
-			my $dump = Data::Dumper->new([$data]);
+			my $dump = Data::Dumper->new([$thing]);
 
 			$dump->Sortkeys(1);
 			$dump->Terse(1);
 
-			my $stuff = $dump->Dump;
-			$stuff =~ s/\n/ /gm;
-			$stuff =~ s/\s+/ /g;
+			my $data = $dump->Dump;
+			$data =~ s/\n/ /gm;
+			$data =~ s/\s+/ /g;
 
-			$nice = sprintf "%s %s", lc($ref), $stuff;
+			$nice = sprintf "%s%s $data", $desc, lc($ref);
 		} else {
-			my $dump = Data::Dumper->new([$data]);
-			my $what = (@_) ? join(' ', @_) : "object $ref";
+			my $dump = Data::Dumper->new([$thing]);
 
 			$dump->Sortkeys(1);
 			$dump->Terse(1);
 
-			$nice = sprintf "$what " . $dump->Dump;
+			my $data = $dump->Dump;
+			$data =~ s/\n$//m;
+			$data =~ s/^bless/object/;
+
+			$nice = sprintf "%s%s %s", $desc, $ref, $data;
+
+			$strip = 0;
 		}
+	}
+	if ($strip) {
+		$nice =~ s/([\[\{])\s+/$1/; # lead space: [ 'foo'   or  { 'bar'
+		$nice =~ s/\s+([\]\}])$/$1/; # trail space: 'foo' ] or  'bar' }
 	}
 #	$self->log->debug($nice);
 
@@ -1394,7 +1446,10 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 =head1 SEE ALSO
 
-L<perl>, L<Carp>, L<Data::Dumper>, L<Log::Log4perl>, L<Path::Tiny>,
+L<perl>, L<Carp>, L<Data::Dumper>, L<Log::Log4perl>,
+L<Hash::Merge>,
+L<List::Util>,
+L<Path::Tiny>,
 L<Text::Unidecode>.
 
 =cut
