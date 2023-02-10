@@ -1,15 +1,18 @@
 Revision history for Perl extension Batch::Exec.
 
 TO-DO:
-
-	- user name
-
-	- move winuser from Batch-Exec-Path
+	- modify parent methods to cater to "default" entries per DN_DRIVE_DFL below.
 
 	- have a shell default for platform, move powershell.exe from BEP
 
 	- c2a command should cough after readpipe
 
+1.008
+	- FIXED:  Too late to run INIT block at ../Batch-Exec/lib/Batch/Exec.pm line 187.
+
+1.007
+	- user name (whoami)
+	- move winuser from Batch-Exec-Path
 
 0.01  Wed Mar 29 19:25:11 2017
 	- original version; created by h2xs 1.23 with options

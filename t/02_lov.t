@@ -7,7 +7,7 @@ use strict;
 use Data::Dumper;
 use Logfer qw/ :all /;
 #use Log::Log4perl qw/ :easy /;
-use Test::More tests => 38;
+use Test::More tests => 39;
 
 BEGIN { use_ok('Batch::Exec') };
 
@@ -62,6 +62,7 @@ is_deeply(\@lovA, \@lovB,			"_lov match");
 
 
 # -------- clear --------
+is($o1->lov("_clear", "classUndef"), 0,		"_clear unregistered");
 is($o1->lov("_clear", "classB"), 4,		"_clear size");
 ok(!exists($o1->{'_lov'}->{'classB'}),		"_clear classB DNE");
 is(exists($o1->{'_lov'}->{'classA'}), 1,	"_clear classA exists");

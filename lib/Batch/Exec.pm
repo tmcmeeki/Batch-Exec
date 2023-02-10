@@ -10,7 +10,7 @@ Copyright (C) 2021  B<Tom McMeekin> tmcmeeki@cpan.org
 
 =head1 SYNOPSIS
 
-use Batch::Exec;
+  use Batch::Exec;
 
 
 =head1 DESCRIPTION
@@ -181,7 +181,8 @@ my %_attribute = (	# _attributes are restricted; no direct get/set
 
 
 # --- package methods ---
-INIT {
+#INIT {
+BEGIN {
 	srand(time);	# see lov() method, action = _random
 };
 
@@ -838,7 +839,7 @@ the class.
 
 Actions, addtional parameters and effects are tabled below:
 
-  _clear    (none)	remove the LoV for the specified class.
+  _clear    (none)	remove the LoV for the specified class if it exists.
   _default  ATTR, VALUE	set attribute to value if not already set.
   _lookup   KEY		lookup the description for the key.
   _lov	    (none)	provide the available keys for this class.
@@ -883,10 +884,13 @@ sub lov {
 
 	if ($action eq '_clear' || $action eq '_lov') {
 
-		$self->cough("no such LoV exists [$class]") unless($exists);
+		if ($action eq '_lov') {
 
-		return @lov if ($action eq '_lov');
+			$self->cough("no such LoV exists [$class]")
+				unless($exists);
 
+			return @lov;
+		}
 		delete $lov->{$class};
 
 		return scalar(@lov);
