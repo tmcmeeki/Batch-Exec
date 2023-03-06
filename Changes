@@ -1,6 +1,10 @@
 Revision history for Perl extension Batch::Exec.
 
 TO-DO:
+	- LOV _default and _random does not work for the non-BE classes,
+		it tries to modify the BE class instead.  Consider
+		and internal structure simlar to _lov itself.
+
 	- modify parent methods to cater to "default" entries per DN_DRIVE_DFL below.
 
 	- have a shell default for platform, move powershell.exe from BEP

@@ -1323,7 +1323,7 @@ sub winuser {
 	}
 	my @result = $self->c2a($cmd);
 
-	$self->log->warn("[$cmd] produced no result")
+	$self->log->logwarn("[$cmd] produced no result")
 		unless (scalar @result);
 
 	$self->log->debug(sprintf "result [%s]", Dumper(\@result));
