@@ -7,7 +7,7 @@ use strict;
 use Data::Dumper;
 use Logfer qw/ :all /;
 #use Log::Log4perl qw/ :easy /;
-use Test::More tests => 130;
+use Test::More tests => 132;
 use File::Basename;
 use File::Spec;
 
@@ -105,6 +105,7 @@ for my $attr (@attr) {
 # -------- Id --------
 is($obj1->Id, 1,			"object identifier one");
 is($obj2->Id, 2,			"object identifier two");
+
 
 # -------- Inherit --------
 is($obj1->Inherit($obj2), $attrs - 1,	"inherit same attribute count");
@@ -217,6 +218,17 @@ ok(length($obj1->pn_release) > 5,	"pn_release string");
 
 ok(defined($obj1->pn_version),		"pn_version defined");
 ok(length($obj1->pn_version) > 5,	"pn_version string");
+
+
+#-------- powershell --------
+if ($obj1->like_windows) {
+
+	like($obj1->powershell, qr/powershell/,		"powershell cmd like_windows");
+	like($obj1->powershell("foo"), qr/ByPass.+File\sfoo/,	"powershell file like_windows");
+} else {
+	like($obj1->powershell, qr/pwsh/,		"powershell cmd other");
+	like($obj1->powershell("bar"), qr/File\sbar/,	"powershell file other");
+}
 
 
 #-------- winuser --------

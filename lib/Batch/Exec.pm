@@ -1182,6 +1182,34 @@ sub os_version {
 	return @lines;
 }
 
+=item OBJ->powershell([PATHNAME])
+
+Return a shell-exit command string to launch the MS Powershell command
+interpreter, optionally passing a pathname for the script file.
+
+=cut
+
+sub powershell {
+	my $self = shift;
+
+	my $cmd = ($self->like_windows) ? "powershell.exe" : "pwsh";
+
+	my $parms; if (@_) {
+
+		$parms = ($self->like_windows) ? "-ExecutionPolicy ByPass" : "";
+
+		$parms .= "-File " . shift;
+
+	} else {
+		$parms = "-Command";
+	}
+	$cmd .= " $parms";
+
+	$self->log->debug("cmd [$cmd]");
+
+	return $cmd;
+}
+
 =item OBJ->pwd
 
 Coughs current directory (done implicitly by the B<godir> method).
@@ -1311,24 +1339,20 @@ sub winuser {
 	my $self = shift;
 
 	$self->echo(1);	# debugging
-	my $cmd; if ($self->on_windows) {
+	my $cmd; if ($self->like_windows) {
 
-		$cmd = q{powershell.exe "$env:UserName"};
-
-	} elsif ($self->like_windows) {
-
-		$cmd = q{powershell.exe '$env:UserName'};
-	} else {
-		$cmd = q{pwsh '$env:UserName'};
+		$cmd = $self->powershell . '$env:UserName';
 	}
-	my @result = $self->c2a($cmd);
+	if (defined $cmd) {
+		my @result = $self->c2a($cmd);
 
-	$self->log->logwarn("[$cmd] produced no result")
-		unless (scalar @result);
+		$self->log->logwarn("[$cmd] produced no result")
+			unless (scalar @result);
 
-	$self->log->debug(sprintf "result [%s]", Dumper(\@result));
+		$self->log->debug(sprintf "result [%s]", Dumper(\@result));
 
-	return $result[0] if (@result);
+		return $result[0] if (@result);
+	}
 
 	return undef;
 }
