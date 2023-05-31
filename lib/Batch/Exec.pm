@@ -1341,7 +1341,7 @@ sub winuser {
 	$self->echo(1);	# debugging
 	my $cmd; if ($self->like_windows) {
 
-		$cmd = $self->powershell . '$env:UserName';
+		$cmd = sprintf "%s '%s%s'", $self->powershell, '$', "env:UserName";
 	}
 	if (defined $cmd) {
 		my @result = $self->c2a($cmd);
