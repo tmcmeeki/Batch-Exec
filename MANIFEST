@@ -1,9 +1,11 @@
 Batch-Exec_audit.txt
+Batch_Exec.mk
+Batch_Exec.plmk
+Build.PL
 Changes
 IDE_VERSION
 LICENSE
 MANIFEST
-Makefile.PL
 README
 README.md
 lib/Batch/Exec.pm

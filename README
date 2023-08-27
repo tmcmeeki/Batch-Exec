@@ -16,6 +16,8 @@ INSTALLATION
 
 To install this module type the following:
 
+   make -f Batch_Exec.mk
+   ... or alternatively ...
    perl Makefile.PL INSTALL_BASE=~
    make
    make test
@@ -25,11 +27,23 @@ DEPENDENCIES
 
 This module requires these other modules and libraries:
 
-  Carp Data::Dumper Hash::Merge List::Util Logfer Path::Tiny Text::Unidecode
+  Custom:
+    Logfer
 
-  e.g.
+  Official (Ubuntu):
+    Carp
+    Data::Dumper
+    Hash::Merge
+    List::Util
+    Path::Tiny
+    Text::Unidecode
 
-  sudo apt-get install libhash-merge-perl libpath-tiny-perl libtext-unidecode-perl
+  Binaries:
+    powershell (or pwsh)
+
+  e.g. sudo apt-get install libhash-merge-perl libpath-tiny-perl libtext-unidecode-perl powershell
+
+  N.B. this is also done by the Batch_Exec.mk makefile above.
 
 COPYRIGHT AND LICENCE
 

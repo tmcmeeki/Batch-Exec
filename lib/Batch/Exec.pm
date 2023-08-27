@@ -2,7 +2,7 @@ package Batch::Exec;
 
 =head1 NAME
 
-Batch::Exec.pm - Batch Executive Framework
+Batch::Exec - Batch Executive Framework
 
 =head1 AUTHOR
 
@@ -1198,7 +1198,7 @@ sub powershell {
 
 		$parms = ($self->like_windows) ? "-ExecutionPolicy ByPass" : "";
 
-		$parms .= "-File " . shift;
+		$parms .= " -File " . shift;
 
 	} else {
 		$parms = "-Command";
