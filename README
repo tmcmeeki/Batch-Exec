@@ -18,10 +18,12 @@ To install this module type the following:
 
    make -f Batch_Exec.mk
    ... or alternatively ...
+   cp -v Batch_Exec.plmk Makefile.PL
    perl Makefile.PL INSTALL_BASE=~
    make
    make test
    make install
+   rm -v Makefile.PL
 
 DEPENDENCIES
 

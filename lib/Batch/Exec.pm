@@ -81,6 +81,10 @@ Boolean controls the fatality of selected operations. A default applies.
 
 The logging object is embedded in this object, per L<Log::Log4perl>.
 
+=item OBJ->prefix
+
+The basename of the current executing programme, without the extension.
+
 =item OBJ->pn_issue
 
 The pathname of the OS distribution, generally known as /etc/issue in Linux.
@@ -100,6 +104,10 @@ The REGULAR expression representing a blank or whitespace string.
 =item OBJ->stdfd
 
 The maximum value of a standard file descriptor (i.e. defaults to stderr).
+
+=item OBJ->this
+
+The basename of the current executing programme.
 
 =item OBJ->wsl_active
 
@@ -170,11 +178,13 @@ my %_attribute = (	# _attributes are restricted; no direct get/set
 	dn_start => undef,	# default this value, may need it later!
 	echo => 0,		# echo stdout for selected operations
 	fatal => 1,		# controls whether failed checks "die"
+	prefix => undef,
 	pn_issue => PN_OS_ISSUE,
 	pn_release => PN_OS_RELEASE,
 	pn_version => PN_OS_VERSION,
 	re_whitespace => RE_WHITESPACE,
 	stdfd => FD_MAX,
+	this => undef,
 	wsl_active => 0,	# flag shows if WSL installed. see wsl_dist
 	wsl_env => ENV_WSL_DIST,	# set only within WSL
 );
@@ -369,6 +379,8 @@ sub new {
 
 	# ---- assign some defaults ----
 	my $tpn = Path::Tiny->new($0); $self->dn_start($tpn->cwd);
+	my $this = $tpn->basename; $self->this($this);
+	my $prefix = $tpn->basename(qr/\..*$/); $self->prefix($prefix);
 
 	while (my ($method, $value) = each %args) {
 
@@ -459,47 +471,89 @@ sub ckdir {
 
 =item OBJ->c2a(EXPR, [BOOLEAN])
 
-Execute the command passed and return output in an array, optionally stripping
-blank tokens (if the boolean flagged passed is true).
+This is currently an alias to the L<c2t> method, although this may change.
+Please use the c2t method.
 
 =cut
 
-sub c2a {	# execute the command passed and return output in an array
+*c2a = \&c2t;
+
+=item OBJ->c2l(EXPR, [BOOLEAN])
+
+Execute the command passed and return output in an array of lines read,
+optionally stripping blank lines (if the boolean flagged passed is true).
+
+=cut
+
+sub c2l {
 	my $self = shift;
 	my $cmd = shift;
-	my $strip = shift;	# flag to remove empty bits
+	confess "SYNTAX c2l(EXPR)" unless (defined $cmd);
+	my $f_strip = shift; $f_strip = 0 unless defined($f_strip);
 
-	$strip = 0 unless (defined $strip);
+	$self->log->info("executing [$cmd]") if ($self->echo);
 
-	$self->log->info("executing [$cmd]")
-		if ($self->{'echo'});
+	my @input = readpipe($cmd);
+	my $input = scalar(@input);
+
+	return $self->cough("WARNING command returned no output")
+		unless (@input);
+
+	$self->log->info("command returned $input lines") if ($self->echo);
+
+	$self->log->debug(sprintf "input [%s]", Dumper(\@input));
+
+	my @output; do {
+
+		my $line = $self->crlf(unidecode(shift @input));
+	
+		chomp($line);
+
+		$line =~ s/\x00//g;	# e.g. 00000800  20 20 20 20  20 27 44  0  65  0 66  0  61  0 75  0        'D e f a u 
+
+		if ($f_strip) {
+			push @output, $line if (length($line));
+		} else {
+			push @output, $line;
+		}
+	} while (@input);
+	$self->log->debug(sprintf "output [%s]", Dumper(\@output));
+
+	my $output = scalar(@output);
+
+	$self->log->info(sprintf "stripped %d lines", $input - $output)
+		if ($output < $input && $self->echo);
+
+	return @output;
+}
+
+=item OBJ->c2t(EXPR)
+
+Execute the command passed and return output in an array of tokens, 
+where tokens are anything delimited by whitespace incl. newline.
+
+=cut
+
+sub c2t {
+	my $self = shift;
+	my $cmd = shift;
+	confess "SYNTAX c2t(EXPR)" unless (defined $cmd);
+
+	$self->log->info("executing [$cmd]") if ($self->echo);
 
 	my $output = unidecode(readpipe($cmd));
 
-	$self->log->trace("output [$output]");
+	return $self->cough("WARNING command returned no output")
+		unless (length($output));
 
 	$output =~ s/\x00//g;	# e.g. 00000800  20 20 20 20  20 27 44  0  65  0 66  0  61  0 75  0        'D e f a u 
 
-	my @tokens = split(/[\s\n]+/m, $output);
+	my @output = split(/[\s\n]+/m, $output);
 
-#	$self->log->trace(sprintf "tokens [%s]", Dumper(\@tokens));
+	$self->log->info(sprintf "command returned %d tokens", scalar(@output))
+		if (@output && $self->echo);
 
-	if (@tokens) {
-		$self->log->info(sprintf "command returned %d tokens", scalar(@tokens))
-			if ($self->{'echo'});
-	} else {
-		$self->log->logwarn("WARNING command returned no output");
-	}
-
-	my @output; if ($strip) {
-
-		map {
-			push @output, $_ if (length($_));
-		} @tokens;
-	} else {
-		@output = @tokens;
-	}
-	$self->log->trace(sprintf "output [%s]", Dumper(\@output));
+	$self->log->debug(sprintf "output [%s]", Dumper(\@output));
 
 	return @output;
 }

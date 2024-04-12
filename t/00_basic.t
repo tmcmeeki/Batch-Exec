@@ -7,7 +7,7 @@ use strict;
 use Data::Dumper;
 use Logfer qw/ :all /;
 #use Log::Log4perl qw/ :easy /;
-use Test::More tests => 132;
+use Test::More tests => 144;
 use File::Basename;
 use File::Spec;
 
@@ -57,7 +57,7 @@ isa_ok($obj2, "Batch::Exec",	"class check $cycle"); $cycle++;
 
 # -------- simple attributes --------
 my @attr = $obj1->Attributes;
-my $attrs = 15;
+my $attrs = 17;
 is(scalar(@attr), $attrs,	"class attributes");
 is(shift @attr, "Batch::Exec",	"class okay");
 
@@ -203,6 +203,10 @@ like($obj1->dump(\%dump), qr{ba.+fo.+ba.+he.+wo.+he},	"dump hashref");
 like($obj1->dump(\%dump, "yyy"), qr{yyy.+ba.+fo.+ba},	"dump hashref extra");
 
 
+# ----- prefix -----
+is($obj1->prefix, "00_basic",		"prefix");
+
+
 # ----- rmdir -----
 ok( $obj1->rmdir($dn_tmp) == 0,		"rmdir ok");
 isnt( -d $dn_tmp, 0,			"rmdir check");
@@ -231,6 +235,10 @@ if ($obj1->like_windows) {
 }
 
 
+# ----- this -----
+is($obj1->this, "00_basic.t",		"this");
+
+
 #-------- winuser --------
 if ($obj1->like_windows) {
 
@@ -239,6 +247,7 @@ if ($obj1->like_windows) {
 	is($obj1->winuser, undef,	"winuser other");
 }
 
+#$log->debug(sprintf "obj1 [%s]", Dumper($obj1));
 
 __END__
 
