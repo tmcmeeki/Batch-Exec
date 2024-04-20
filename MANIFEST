@@ -12,3 +12,4 @@ lib/Batch/Exec.pm
 t/00_basic.t
 t/01_platform.t
 t/02_lov.t
+t/03_header.t

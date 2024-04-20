@@ -7,7 +7,7 @@ use strict;
 use Data::Dumper;
 use Logfer qw/ :all /;
 #use Log::Log4perl qw/ :easy /;
-use Test::More tests => 144;
+use Test::More tests => 149;
 use File::Basename;
 use File::Spec;
 
@@ -57,7 +57,7 @@ isa_ok($obj2, "Batch::Exec",	"class check $cycle"); $cycle++;
 
 # -------- simple attributes --------
 my @attr = $obj1->Attributes;
-my $attrs = 17;
+my $attrs = 18;
 is(scalar(@attr), $attrs,	"class attributes");
 is(shift @attr, "Batch::Exec",	"class okay");
 

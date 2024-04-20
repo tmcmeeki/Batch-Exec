@@ -3,17 +3,16 @@ Revision history for Perl extension Batch::Exec.
 TO-DO:
 	- Error registration and suppression (avoid duplicates, e.g. c2a
 	  issues this: WARNING command returned no output
-	- LOV _default and _random does not work for the non-BE classes,
-		it tries to modify the BE class instead.  Consider
-		and internal structure simlar to _lov itself.
 
-	- modify parent methods to cater to "default" entries per DN_DRIVE_DFL below.
+	- modify class methods to cater to "default" entries per DN_DRIVE_DFL below.
 	- have a shell default for platform,
 
-	- c2a command should cough after readpipe
-		- should also capture or bury stderr as an option (if possible).
+	- c2a should also capture or bury stderr as an option (if possible).
 
 1.013
+	- LOV _default and _random does not work for the non-BE classes,
+		it tries to modify the BE class instead... now passes object
+	- c2a command should cough after readpipe
 	- added prefix and this attributes.
 	- moved powershell.exe from BEP
 
