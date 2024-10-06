@@ -159,45 +159,20 @@ use constant RE_WHITESPACE => '\s+';
 
 
 # --- package globals ---
-#our @EXPORT = qw();
 #our @ISA = qw(Exporter);
+#our @EXPORT = qw();
 our $AUTOLOAD;
 our @ISA;
 our $VERSION = sprintf "%d.%03d", q[_IDE_REVISION_] =~ /(\d+)/g;
+our $_package;
 
 
 # --- package locals ---
 my $_n_objects = 0;
-my %_h_lov;			# global lists of values, see lov() method
-
-my %_attribute = (		# _attributes are restricted; no direct get/set
-	_id => undef,		# an identifier for this widget
-	_inherent => [],	# genes that i'll pass on to my children
-	_n_objects => \$_n_objects,
-	_lov => \%_h_lov,	# class-level LoV register.
-	leader => '#',		# comment leader for header (file output)
-	log => get_logger("Batch::Exec"),
-#	dump => undef,
-	autoheader => 0,	# automatically put a header on any files
-	cmd_os_version => undef,
-	cmd_os_where => undef,
-	dn_start => undef,	# default this value, may need it later!
-	echo => 0,		# echo stdout for selected operations
-	fatal => 1,		# controls whether failed checks "die"
-	prefix => undef,
-	pn_issue => PN_OS_ISSUE,
-	pn_release => PN_OS_RELEASE,
-	pn_version => PN_OS_VERSION,
-	re_whitespace => RE_WHITESPACE,
-	stdfd => FD_MAX,
-	this => undef,
-	wsl_active => 0,	# flag shows if WSL installed. see wsl_dist
-	wsl_env => ENV_WSL_DIST,	# set only within WSL
-);
 
 
 # --- package methods ---
-#INIT {
+#INIT { }
 BEGIN {
 	srand(time);	# see lov() method, action = _random
 };
@@ -205,20 +180,26 @@ BEGIN {
 
 sub AUTOLOAD {
 	my $self = shift;
-	my $type = ref($self) or confess "$self is not an object";
+	my $class = ref($self);# or confess "$self is not an object";
 
-	my $attr = $AUTOLOAD;
-	$attr =~ s/.*://;   # strip fully−qualified portion
+	confess "FATAL invalid function called [$AUTOLOAD]\n"
+		if ($class eq '');
 
-	confess "FATAL older attribute model"
-		if (exists $self->{'_permitted'} || !exists $self->{'_have'});
+	my @stack = split(/::/, $AUTOLOAD);
+	my $attr = pop @stack;
 
-	confess "FATAL no attribute [$attr] in class [$type]"
-		unless (exists $self->{'_have'}->{$attr} && $self->{'_have'}->{$attr});
-	if (@_) {
-		return $self->{$attr} = shift;
-	} else {
-		return $self->{$attr};
+#	printf "PARENT AUTOLOAD [$AUTOLOAD] ISA [%s]\n", Dumper(\@ISA);
+
+	unless ($self->can($attr)) {
+
+		confess "FATAL no attribute [$attr] in class [$class]"
+			unless exists($self->{$attr});
+
+		if (@_) {
+			return $self->Attribute("set", $attr, @_);
+		} else {
+			return $self->Attribute("get", $attr);
+		}
 	}
 }
 
@@ -240,27 +221,226 @@ sub Alive {
 	return 0;
 }
 
-=item OBJ->Attributes
+=item OBJ->Attribute
+
+Register a new attribute for this object.
+
+=cut
+
+sub Attribute {
+	my $self = shift;
+	my $verb = shift; $verb = "get" unless defined($verb);
+	my $name = shift;
+	confess "SYNTAX Attribute(EXPR, EXPR)" unless defined($name);
+
+	my $class = ref($self);
+	my $s_all = "(all)";
+	my %type = (
+	  'any' => "Attribute can take any value",
+	  'bool' => "Attribute takes a boolean value [0, 1]",
+	  'log' => "A Log::Log4perl object associated with the class",
+	  'lov' => "Attribute makes use of a list of valid values",
+	);
+	my %verb = (
+	  'default' => "Get the default value for the attribute (if extant)",
+	  'define' => "Create a new typed attribute",
+	  'get' => "Get the current value of the attribute",
+	  'prop' => "Get the specified property of the specified attribute",
+	  'remove' => "Purge the object of the attribute; use with care",
+	  'reset' => "Reset the value of an attribute(s) to its default",
+	  'ro' => "Enable read-only for attribute(s)",
+	  'rw' => "Enable read-write for attribute(s)",
+	  'set' => "Set the current value/default of the attribute",
+	  'sync' => "Set the default to the current value of the attribute(s)",
+	);
+	my $msg = "FATAL %s [%s] does not exist, try: { %s }";
+	my $ckbool = sub {
+		my $nom = shift;
+		my $typ = shift;
+		my $rs = shift;
+
+		return unless ($typ eq 'bool');
+
+		my $val = $$rs;
+
+		unless (defined $val) {
+
+			cluck "WARNING attribute [$nom] boolean undefined, defaulting";
+			$$rs = 0;
+
+			return $$rs;
+		}
+
+		confess "FATAL attribute [$nom] value is not boolean [$val], try: { 0, 1 }"
+			unless ($val =~ /^[01]$/);
+	};
+	my $ckname = sub {
+		my $nom = shift;
+		confess "FATAL attribute [$nom] does not exist"
+			unless (exists $self->{$nom});
+
+		return $self->{$nom};
+	};
+
+	confess sprintf($msg, "verb", $verb, join(', ', sort keys %verb))
+		unless (exists $verb{$verb});
+
+	if ($verb eq 'define') {
+
+		my $type = shift;
+
+		confess "FATAL define operation must specify a type"
+			unless (defined $type);
+
+		confess "FATAL attribute [$name] already exists"
+			if (exists $self->{$name});
+
+		confess sprintf($msg, "type", $type, join(', ', sort keys %type))
+			unless (exists $type{$type});
+
+		my ($val, $dfl); if ($type eq "log") {
+
+			$val = get_logger($class);
+			$dfl = $val;
+		} else {
+			$val = shift;
+			$dfl = shift;
+
+			&{ $ckbool }($name, $type, \$val);
+			&{ $ckbool }($name, $type, \$dfl);
+		}
+
+		my %attr = (
+			'class' => $_package,
+			'default' => $dfl,
+			'ro' => 0,
+			'name' => $name,
+			'type' => $type,
+			'value' => $val,
+		);
+#		printf "AAA package [$_package] attr [%s]\n", Dumper(\%attr);
+	
+		$self->{$name} = { %attr };
+
+		return $self->{$name};
+
+	} elsif ($verb eq 'remove') {
+
+		&{ $ckname }($name);
+
+		my %attr = %{ $self->{$name} };
+
+		delete $self->{$name};
+
+		return \%attr;
+
+	} elsif ($verb =~ /^(reset|ro|rw|sync)$/) {
+
+		my @attr; if ($name eq $s_all) {
+
+			@attr = $self->Attributes;
+
+			shift @attr;
+		} else {
+			push @attr, $name, @_;
+		}
+
+		my $count = 0; for $name (@attr) {
+
+			&{ $ckname }($name);
+
+			if ($verb eq 'reset') {
+
+				$self->{$name}->{'value'} = $self->{$name}->{'default'};
+			} elsif ($verb eq 'sync') {
+
+				$self->{$name}->{'default'} = $self->{$name}->{'value'};
+			} elsif ($verb eq 'ro') {
+
+				$self->{$name}->{'ro'} = 1;
+
+			} elsif ($verb eq 'rw') {
+
+				$self->{$name}->{'ro'} = 0;
+
+			}
+			$count++;
+		}
+		return $count;
+
+	} elsif ($verb eq 'prop') {
+
+		my $attr = &{ $ckname }($name);
+		my $prop = shift;
+
+		my $err = sprintf("FATAL specify a property, one of { %s }",
+			join(', ', sort keys %$attr));
+
+		confess $err unless defined($prop);
+		confess "FATAL invalid property [$prop] for attribute [$name]"
+			unless(exists $attr->{$prop});
+
+		return $attr->{$prop};
+	} else {
+		&{ $ckname }($name);
+
+		return $self->{$name}->{'default'}
+			if ($verb eq 'default');
+
+		return $self->{$name}->{'value'}
+			if ($verb eq 'get');
+
+		if ($verb eq 'set') {
+
+			confess "FATAL attribute [$name] is read-only"
+				if ($self->{$name}->{'ro'});
+
+			my $val = shift;
+			my $dfl = shift;
+
+			&{ $ckbool }($name, $self->{$name}->{'type'}, \$val);
+			&{ $ckbool }($name, $self->{$name}->{'type'}, \$dfl)
+				if defined($dfl);
+
+			$self->{$name}->{'value'} = $val;
+			$self->{$name}->{'default'} = $dfl if defined($dfl);
+
+			return $val;
+		}
+	}
+#	return undef;
+	confess "verb [$verb] has no designated action";
+}
+
+=item OBJ->Attributes([BOOLEAN])
 
 List the attributes applicable for this class.  Returns the list
-of attributes preceded by the class name itself.
+of attributes preceded by the class name itself.  If the BOOLEAN argument
+is passed and is true, then prints details to screen.
 
 =cut
 
 sub Attributes {
 	my $self = shift;
+	my $verbose = shift; $verbose = 0 unless defined($verbose);
 	my $class = ref($self);
+	my $tpl = "am [$class] have [%s]";
 
-	my (@have, @hide); for my $attr (sort keys %{ $self->{'_have'} }) {
+	my @attr;
+	my @have; map {
+		if (ref($self->{$_}) eq 'HASH') {
 
-		if ($self->{'_have'}->{$attr}) {
-			push @have, $attr;
-		} else {
-			push @hide, $attr;
+			if (exists $self->{$_}->{'name'}) {
+
+				push @attr, $self->{$_};
+				push @have, $self->{$_}->{'name'}
+			}
 		}
-	}
-	$self->log->info(sprintf "am [$class] have [%s] hide [%s]",
-		join(', ', @have), join(', ', @hide));
+	} keys(%$self);
+
+	$self->log->info(sprintf $tpl, join(', ', sort @have)) if ($self->echo);
+
+	$self->tabulate(\@attr) if ($verbose);
 
 	unshift @have, $class;
 
@@ -289,7 +469,12 @@ sub Has {
 	my $attr = shift;
 	confess "SYNTAX Has(EXPR)" unless defined($attr);
 
-	return 1 if exists($self->{'_have'}->{$attr});
+#	return 1 if exists($self->{'_have'}->{$attr});
+	if (exists($self->{$attr}) && ref($self->{$attr}) eq 'HASH') {
+
+		return 1
+			if ($self->{$attr}->{'name'} eq $attr);
+	}
 
 	return 0;
 }
@@ -311,13 +496,13 @@ sub Id {
 
 		if ($op eq 'add') {
 
-			$id = ++${ $self->{'_n_objects'} };
+			$id = ++${ $self->n_objects };
 
 			$self->{'_id'} = $id;
 
 		} elsif ($op eq 'del') {
 
-			--${ $self->{'_n_objects'} };
+			--${ $self->n_objects };
 
 		} else {
 			confess("invalid operator [$op]");
@@ -330,36 +515,60 @@ sub Id {
 	return $id;
 }
 
-=item OBJ->Inherit(OBJECT)
+=item OBJ->Clone(OBJECT, [BOOLEAN])
 
-Pass parent genes between offspring, basically sets the attributes in the
-current object from another object, based on the inherited attribute list.
+Clone attributes from object passed to the current object, based on the formal
+attribute list.  Use the BOOLEAN to force copy read-only attributes, one of:
+1 = force, -1 = skip.
 
 =cut
 
-sub Inherit {
+sub Clone {
 	my $self = shift;
 	my $sibling = shift;
-	confess "FATAL you must specify an object from which to inherit"
+	my $force = shift; $force = 0 unless defined($force);
+	confess "FATAL you must specify an object from which to clone"
 		unless (defined($sibling) && ref($sibling) ne "");
 
-#	my $class = ref($self);
-	my @attr = @{ $self->{'_inherent'} };
+	my @attr = $self->Attributes;
+	my $class = shift @attr;
 
-	$self->log->debug(sprintf "attr [%s]", Dumper(\@attr));
+	my $skip = 0; my $total = 0; for my $attr (@attr) {
 
-	my $count = 0; for my $attr (@attr) {
 		my $value = $sibling->$attr;
+		my $ro = $self->Attribute("prop", $attr, "ro");
 
-#		$self->log->debug("setting attr [$attr] to [$value]")
+		if ($ro) {
+			my $msg = "%s read-only attribute change on [$attr]";
 
-		$self->$attr($value);
+			if ($force > 0) {
 
-		$count++;
+				$self->log->info(sprintf $msg, "forcing");
+
+				$self->Attribute("rw", $attr);
+
+			} elsif ($force < 0) {
+
+				$self->log->info(sprintf $msg, "skipping");
+
+				$skip++;
+			}
+		}
+		if ($force >= 0) {
+
+#			$self->log->debug("setting attr [$attr] to [$value]")
+
+			$self->$attr($value);
+		}
+		$self->Attribute("ro", $attr) if ($ro && $force > 0);
+
+		$total++;
 	}
-	$self->log->info("inherited $count attributes");
+	my $changed = $total - $skip;
 
-	return $count;
+	$self->log->info("cloned $changed attributes");
+
+	return $changed;
 }
 
 
@@ -368,25 +577,40 @@ sub new {
 	my %args = @_;	# parameters passed via a hash structure
 
 	my $self = {};			# for base-class
-	my %attr = ('_have' => { map{$_ => ($_ =~ /^_/) ? 0 : 1 } keys(%_attribute) }, %_attribute);
 
 	bless ($self, $class);
 
-	map { push @{$self->{'_inherent'}}, $_ if ($attr{"_have"}->{$_}) } keys %{ $attr{"_have"} };
+	$Batch::Exec::_package = __PACKAGE__;
+	$Data::Dumper::Sortkeys = 1;
 
-	while (my ($attr, $dfl) = each %attr) { 
+	my %lov;
+	my $tpn = Path::Tiny->new($0);
 
-		unless (exists $self->{$attr} || $attr eq '_have') {
-			$self->{$attr} = $dfl;
-			$self->{'_have'}->{$attr} = $attr{'_have'}->{$attr};
-		}
-	}
+	$self->Attribute("define", "log", "log");
+	$self->Attribute("define", "n_objects", "any", \$_n_objects);
+	$self->Attribute("define", "_lov", "any", \%lov);
+	$self->Attribute("define", "leader", "any", '#');
+	$self->Attribute("define", "autoheader", "bool", 0, 0);
+	$self->Attribute("define", "cmd_os_version", "any");
+	$self->Attribute("define", "cmd_os_where", "any");
+	$self->Attribute("define", "dn_start", "any", $tpn->cwd);
+	$self->Attribute("define", "echo", "bool", 0, 0);
+	$self->Attribute("define", "fatal", "bool", 1, 1);
+	$self->Attribute("define", "maxlen", "any", 30); # max strlen trunc
+	$self->Attribute("define", "prefix", "any", $tpn->basename(qr/\..*$/));
+	$self->Attribute("define", "pn_issue", "any", PN_OS_ISSUE);
+	$self->Attribute("define", "pn_release", "any", PN_OS_RELEASE);
+	$self->Attribute("define", "pn_version", "any", PN_OS_VERSION);
+	$self->Attribute("define", "re_whitespace", "any", RE_WHITESPACE);
+	$self->Attribute("define", "stdfd", "any", FD_MAX);
+	$self->Attribute("define", "this", "any", $tpn->basename);
+	$self->Attribute("define", "wsl_active", "bool", 0, 0);
+	$self->Attribute("define", "wsl_env", "any", ENV_WSL_DIST);
+
+	$self->Attribute(qw/ sync (all) /);
+	$self->Attribute(qw/ ro log _lov n_objects /);
+
 	$self->Id('add');
-
-	# ---- assign some defaults ----
-	my $tpn = Path::Tiny->new($0); $self->dn_start($tpn->cwd);
-	my $this = $tpn->basename; $self->this($this);
-	my $prefix = $tpn->basename(qr/\..*$/); $self->prefix($prefix);
 
 	while (my ($method, $value) = each %args) {
 
@@ -395,7 +619,7 @@ sub new {
 
 		$self->log->debug("method [self->$method($value)]");
 
-		$self->$method($value);
+		$self->$method($value, $value);
 	}
 	# ___ additional class initialisation here ___
 	#
@@ -605,31 +829,39 @@ sub crlf { #	remove the CR from DOS CRLF (end-of-line string)
 	return $str;
 }
 
-=item OBJ->delete(PATH)
+=item OBJ->delete(PATH, ...)
 
-Delete a file or directory.
+Delete a file or directory. Able to handle multiple items.
 
 =cut
 
 sub delete {
 	my $self = shift;
-	my $pn = shift;
-	confess "SYNTAX delete(EXPR)" unless defined ($pn);
+	confess "SYNTAX delete(EXPR)" unless (@_);
 
-	if (-d $pn) {
+	my $fail = 0; for my $pn (@_) {
 
-		return $self->rmdir($pn);
+		if (-d $pn) {
 
-	} elsif (-f $pn) {
+			$fail++ if ($self->rmdir($pn));
 
-		$self->log->info("removing file [$pn]")
-			if ($self->Alive && $self->echo);
+		} elsif (-f $pn) {
 
-		unlink($pn) || $self->cough("unlink($pn) failed");
+			$self->log->info("removing file [$pn]")
+				if ($self->Alive && $self->echo);
+
+			unlink($pn) || $self->cough("unlink($pn) failed");
+
+			if (-f $pn) {
+
+				$self->cough("could not remove file [$pn]");
+
+				$fail++;
+			}
+		}
 	}
-
-	return ($self->cough("could not remove file [$pn]"))
-		if (-f $pn);
+	return $self->cough("$fail files could not be removed")
+		if ($fail);
 
 	return 0;
 }
@@ -1347,6 +1579,120 @@ sub rmdir {
 	return 0;
 }
 
+=item OBJ->tabulate(REF, [SORT])
+
+Tabulate the referenced ARRAY or HASH which is assumed to contain hashes
+of fixed keys.
+
+=cut
+
+sub tabulate {
+	my $self = shift;
+	my $ref = shift;
+	my $sort = shift; $sort = 'name' unless defined($sort);
+	confess "SYNTAX tabulate(REF)" unless defined($ref);
+
+	my $msg = "you must pass a reference to an array or a hash";
+	my @header;
+	my @width;
+
+	my @records; if (ref($ref) eq 'ARRAY') {
+
+		@records = @$ref;
+
+	} elsif (ref($ref) eq 'HASH') {
+
+		@records = values %$ref;
+
+	} else {
+		$self->log->logconfess($msg);
+	}
+
+	$self->log->trace(sprintf "records [%s]", Dumper(\@records));
+
+	my @temp;
+
+	my $count = 0; for my $rec (@records) {
+
+		unless ($count++) {	# first record
+
+			my (@first, @last); for my $kn (sort keys %$rec) {
+
+				if ($kn eq $sort) {
+					push @first, $kn;
+				} else {
+					push @last, $kn;
+				}
+			}
+			push @header, @first, @last;
+
+			for (@header) { push @width, length($_); }
+		}
+
+		my %new = ();
+
+		for (my $ss = 0; $ss < @header; $ss++) {
+
+			my $key = $header[$ss];
+			my $value = $rec->{$key};
+			my $what = ref($value);
+
+			if ($what eq 'SCALAR') {
+				$value = '*' . $$value;
+
+			} elsif ($what ne '') {
+
+				my $dd = Data::Dumper->new([$value]);
+				$dd->Indent(0);
+				$dd->Terse(1);
+				$value = $dd->Dump($value);
+			}
+
+			my $len; if (defined $value) {
+
+				$value = $self->trunc($value);
+				$len = length($value);
+			} else {
+				$len = 7;
+				$value = "(undef)";
+			}
+
+			$self->log->trace("value [$value] len [$len]");
+
+			$width[$ss] = $len if ($len > $width[$ss]);
+			$new{$key} = $value;
+		}
+		$self->log->trace(sprintf "new [%s]", Dumper(\%new));
+
+		push @temp, { %new };
+	}
+	@records = ();
+	my @sorted = sort { $a->{$sort} cmp $b->{$sort} } @temp;
+	@temp = ();
+
+	$self->log->trace(sprintf "header [%s] width [%s]", Dumper(\@header), Dumper(\@width));
+
+	my $str = ""; for (my $ss = 0; $ss < @header; $ss++) {
+
+		my $width = $width[$ss] + 1;
+
+		$str .= sprintf("%-*s", $width, $header[$ss]);
+	}
+	$self->log->info($str);
+
+	for my $rec (@sorted) {
+
+		$str = ""; for (my $ss = 0; $ss < @header; $ss++) {
+
+			my $width = $width[$ss] + 1;
+
+			$str .= sprintf("%-*s", $width, $rec->{$header[$ss]});
+		}
+		$self->log->info($str);
+	}
+	return $count;
+}
+
 =item OBJ->trim(EXPR, REGEXP)
 
 Trim the specified regexp from start and end of passed string.
@@ -1380,6 +1726,37 @@ sub trim_ws {
 	confess "SYNTAX trim_ws(EXPR)" unless (defined $str);
 
 	return $self->trim($str, $self->re_whitespace);
+}
+
+=item OBJ->trunc(EXPR, [INTEGER])
+
+Truncate the string passed.  Optionally pass a length (a default applies).
+
+=cut
+
+sub trunc {
+	my $self = shift;
+	my $str = shift;
+	my $max = shift;
+	confess "SYNTAX trunc(EXPR)" unless defined($str);
+
+	$max = $self->maxlen unless defined($max);
+
+	my $len = length($str);
+
+	my $trunc; if ($len > $max) {
+
+		my $ellipsis = "...";
+
+		my $lel = length($ellipsis);
+
+		$trunc = substr($str, 0, $max - $lel) . $ellipsis;
+	} else {
+
+		$trunc = $str;
+	}
+
+	return $trunc;
 }
 
 =item OBJ->where(EXPR)

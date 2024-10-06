@@ -7,16 +7,19 @@ use strict;
 use Data::Dumper;
 use Logfer qw/ :all /;
 #use Log::Log4perl qw/ :easy /;
-use Test::More tests => 149;
+use Test::More tests => 202;
 use File::Basename;
+use File::Find;
 use File::Spec;
 
 BEGIN { use_ok('Batch::Exec') };
 
 
 # -------- constants --------
-use constant DN_TMP_UX => File::Spec->catfile("", "tmp");
-use constant DN_TMP_MS => 'C:\Windows\Temp';
+#use constant DN_TMP_UX => File::Spec->catfile("", "tmp");
+use constant DN_TMP_UX => File::Spec->catfile(".", "tmp");
+#use constant DN_TMP_MS => 'C:\Windows\Temp';
+use constant DN_TMP_MS => '.\tmp';
 use constant DN_INVALID => '_$$$_';
 
 use constant PFX_THIS => basename($0);
@@ -29,7 +32,7 @@ my $cycle = 1;
 
 
 # -------- subroutines --------
-sub make_a_file {
+sub gen_file {
 	my $dn = shift;
 	my $pn = File::Spec->catfile($dn, PFX_THIS);
 
@@ -47,43 +50,147 @@ sub make_a_file {
 }
 
 
+sub gen_folder {
+	my $dn = shift;
+	my $pn = File::Spec->catfile($dn, PFX_THIS);
+
+	my $suffix = "_dir_$cycle";
+	$pn =~ s/\.t/$suffix/;
+
+	$log->debug("creating [$pn]");
+
+	mkdir($pn) || die("mkdir($pn) failed");
+
+	$cycle++;
+
+	return $pn;
+}
+
+
 # -------- main --------
 my $obj1 = Batch::Exec->new;
 isa_ok($obj1, "Batch::Exec",	"class check $cycle"); $cycle++;
 
-my $obj2 = Batch::Exec->new(fatal => 0);
+my $obj2 = Batch::Exec->new(fatal => 0, echo => 1);
 isa_ok($obj2, "Batch::Exec",	"class check $cycle"); $cycle++;
+
+
+# -------- Attribute define --------
+SKIP: {
+	skip "invalid Attribute parameters", 1;
+
+	$obj1->Attribute("dummy", "dummy");
+}
+
+my %dummy = (
+  'class' => 'Batch::Exec',
+  'default' => "bar",
+  'name' => 'xxx',
+  'ro' => 0,
+  'type' => 'any',
+  'value' => "foo"
+);
+
+is_deeply(\%dummy,$obj1->Attribute(qw/ define xxx any foo bar/), "Attribute def xxx");
+
+$dummy{'name'} = "yyy";
+
+is_deeply(\%dummy,$obj1->Attribute(qw/ define yyy any foo bar/), "Attribute def yyy");
+
+# -------- Attribute get --------
+is($obj1->Attribute(qw/ get xxx /), "foo",	"get xxx");
+is($obj1->Attribute(qw/ get yyy /), "foo",	"get yyy");
+
+# -------- Attribute default --------
+is($obj1->Attribute(qw/ default xxx /), "bar",	"default before xxx");
+is($obj1->Attribute(qw/ get xxx /), "foo",	"default after xxx");
+is($obj1->Attribute(qw/ default yyy /), "bar", "default during yyy");
+is($obj1->Attribute(qw/ get yyy /), "foo",	"default after yyy");
+
+# -------- Attribute prop --------
+SKIP: {
+	skip "invalid Attribute property", 2;
+
+	is($obj1->Attribute(qw/ prop yyy xxx /),	"prop xxx invalid");
+	is($obj1->Attribute(qw/ prop yyy /),		"prop null invalid");
+}
+is($obj1->Attribute(qw/ prop yyy class /), "Batch::Exec",	"prop class");
+is($obj1->Attribute(qw/ prop yyy default /), "bar",	"prop default");
+is($obj1->Attribute(qw/ prop yyy ro /), "0",		"prop ro");
+is($obj1->Attribute(qw/ prop yyy name /), "yyy",	"prop name");
+is($obj1->Attribute(qw/ prop yyy type /), "any",	"prop type");
+is($obj1->Attribute(qw/ prop yyy value /), "foo",	"prop value");
+
+# -------- Attribute reset --------
+is($obj1->Attribute(qw/ get xxx /), "foo",	"reset before");
+isnt($obj1->Attribute(qw/ reset xxx /), "foo", "reset during");
+is($obj1->Attribute(qw/ get xxx /), "bar",	"reset after");
+
+# -------- Attribute sync --------
+is($obj1->Attribute(qw/ set xxx hello /), "hello",	"sync before");
+isnt($obj1->Attribute(qw/ sync xxx /), "hello", "sync during");
+is($obj1->Attribute(qw/ default xxx /), "hello",	"default after sync");
+is($obj1->Attribute(qw/ get xxx /), "hello",	"sync after");
+
+# -------- Attribute ro --------
+is($obj1->Attribute(qw/ prop yyy ro /), 0,	"Attribute before ro yyy");
+is($obj1->Attribute(qw/ prop xxx ro /), 0,	"Attribute before ro xxx");
+is($obj1->Attribute(qw/ ro yyy xxx /), 2, 	"Attribute during ro");
+is($obj1->Attribute(qw/ prop yyy ro /), 1,	"Attribute after ro yyy");
+is($obj1->Attribute(qw/ prop xxx ro /), 1,	"Attribute after ro xxx");
+SKIP: {
+	skip "ro Attribute parameters", 2;
+
+	$obj1->yyy("hello");
+	$obj1->xxx("world");
+}
+
+# -------- Attribute rw --------
+is($obj1->Attribute(qw/prop yyy ro/), 1,	"Attribute before rw yyy");
+is($obj1->Attribute(qw/prop xxx ro/), 1,	"Attribute before rw xxx");
+is($obj1->Attribute(qw/rw yyy xxx/), 2, "Attribute during rw");
+is($obj1->Attribute(qw/prop yyy ro/), 0,	"Attribute after rw yyy");
+is($obj1->Attribute(qw/prop xxx ro/), 0,	"Attribute after rw xxx");
+
+# -------- Attribute remove --------
+is(ref($obj1->Attribute(qw/ remove xxx /)), 'HASH',	"Attribute remove xxx");
+is_deeply(\%dummy, $obj1->Attribute(qw/ remove yyy /),	"Attribute remove yyy");
 
 
 # -------- simple attributes --------
 my @attr = $obj1->Attributes;
-my $attrs = 18;
-is(scalar(@attr), $attrs,	"class attributes");
-is(shift @attr, "Batch::Exec",	"class okay");
+my $attrs = 21;
+is(scalar(@attr), $attrs,		"class attributes");
+is(shift @attr, "Batch::Exec",		"class okay");
+is($obj1->Attributes(1), $attrs,	"Attributes tabulate");
 
 for my $attr (@attr) {
 
 	my $dfl = $obj1->$attr;
+	my $type = $obj1->Attribute("prop", $attr, "type");
 
-	my ($set, $type); if (defined $dfl && $dfl =~ /^[\-\d\.]+$/) {
-		$set = -1.1;
-		$type = "f`";
+	next if ($obj1->Attribute("prop", $attr, "ro"));
+
+	my $set; if ($type eq 'bool') {
+		$set = ($dfl) ? 0 : 1;
 	} else {
 		$set = "_dummy_";
-		$type = "s";
 	}
+	$log->debug("attr [$attr] type [$type] dfl [$dfl] set [$set]");
 
 	is($obj1->$attr($set), $set,	"$attr set cycle $cycle");
 	isnt($obj1->$attr, $dfl,	"$attr check");
 
 	$log->debug(sprintf "attr [$attr]=%s", $obj1->$attr);
 
-	if ($type eq "s") {
+	if ($type eq "bool") {
+
+		like($obj1->$attr, qr/^[01]/, "$attr bool");
+
+	} else {
 		my $ck = (defined $dfl) ? $dfl : "_null_";
 
-		ok($obj1->$attr ne $ck,	"$attr string");
-	} else {
-		ok($obj1->$attr < 0,	"$attr number");
+		ok($obj1->$attr ne $ck,	"$attr other");
 	}
 	is($obj1->$attr($dfl), $dfl,	"$attr reset");
 
@@ -103,12 +210,21 @@ for my $attr (@attr) {
 
 
 # -------- Id --------
+#$log->debug(sprintf "obj1 [%s]", Dumper($obj1));
+#$log->debug(sprintf "obj2 [%s]", Dumper($obj2));
+
 is($obj1->Id, 1,			"object identifier one");
 is($obj2->Id, 2,			"object identifier two");
 
 
-# -------- Inherit --------
-is($obj1->Inherit($obj2), $attrs - 1,	"inherit same attribute count");
+# -------- Clone --------
+SKIP: {
+	skip "Clone read-only will fail", 1;
+
+	is($obj1->Clone($obj2, 0), $attrs - 1,	"Clone same attribute count");
+}
+is($obj1->Clone($obj2, 1), $attrs - 1,	"Clone force attribute count");
+is($obj1->Clone($obj2, -1), $attrs - 4,	"Clone skip attribute count");
 
 
 # ---- RO: platform-related -----
@@ -130,8 +246,8 @@ if ($obj1->on_wsl || $obj1->on_cygwin) {
 my $dn_top = ($obj1->on_windows) ? DN_TMP_MS : DN_TMP_UX;
 ok( $obj2->ckdir(DN_INVALID) != 0,	"ckdir does not exist");
 
-ok( -d $dn_top,				"confirm top extant");
-ok( $obj1->ckdir($dn_top) == 0,		"ckdir top extant");
+#ok( -d $dn_top,				"confirm top extant");
+#ok( $obj1->ckdir($dn_top) == 0,		"ckdir top extant");
 ok( $obj2->mkdir($dn_top) == 0,		"mkdir top nonfatal");
 
 my $dn_tmp = File::Spec->catdir($dn_top, PFX_THIS);
@@ -159,10 +275,10 @@ is($obj2->extant(DN_INVALID), 0,	"extant invalid nonfatal");
 is($obj2->extant($dn_top), 1,	"extant top");
 is($obj2->extant($dn_tmp), 1,	"extant tmp");
 
-my $fn_tmp1 = make_a_file($dn_tmp);
+my $fn_tmp1 = gen_file($dn_tmp);
 is($obj1->extant($fn_tmp1, 'f'), 1,	"extant new file cycle=$cycle"); $cycle++;
 
-my $fn_tmp2 = make_a_file($dn_tmp);
+my $fn_tmp2 = gen_file($dn_tmp);
 is($obj1->extant($fn_tmp2, 'f'), 1,	"extant new file cycle=$cycle"); $cycle++;
 
 
@@ -170,16 +286,53 @@ is($obj1->extant($fn_tmp2, 'f'), 1,	"extant new file cycle=$cycle"); $cycle++;
 my @delete = ($fn_tmp1, $fn_tmp2);
 
 my $fc = 0; for (@delete) { $fc++ if (-f $_); }
-
-is($fc, 2, 				"before delete $cycle"); $cycle++;
+is($fc, 2, 				"before delete $cycle");
 
 $fc = 0; for (@delete) {
 
-	is($obj2->delete($_), 0, 	"delete file $cycle"); $cycle++;
+	is($obj2->delete($_), 0, 	"delete file $cycle");
 
 	$fc++ if (-f $_);
 }
-is($fc, 0, 				"after delete $cycle"); $cycle++;
+is($fc, 0, 				"after delete $cycle");
+
+
+# ----- delete many files -----
+@delete = ();
+
+push @delete, gen_file($dn_tmp);
+push @delete, gen_file($dn_tmp);
+
+$fc = 0; for (@delete) { $fc++ if (-f $_); }
+is($fc, 2, 			"multi-file before $cycle");
+
+is($obj2->delete(@delete), 0, 	"multi-file delete $cycle");
+
+$fc = 0; for (@delete) { $fc++ if (-f $_); }
+is($fc, 0, 			"multi-file after $cycle");
+
+
+# ----- delete many folders -----
+@delete = ();
+
+push @delete, gen_folder($dn_tmp);
+gen_file($delete[-1]);
+gen_file($delete[-1]);
+
+push @delete, gen_folder($dn_tmp);
+gen_file($delete[-1]);
+gen_file($delete[-1]);
+
+$fc = 0; for (@delete) { $fc++ if (-d $_); }
+is($fc, 2, 			"multi-dir before $cycle");
+
+$fc = 0; find({'wanted' => sub { $fc++; }, 'no_chdir' => 0 }, @delete);
+is($fc, 6, 			"multi-dir total $cycle");
+
+is($obj2->delete(@delete), 0, 	"multi-dir delete $cycle");
+
+$fc = 0; for (@delete) { $fc++ if (-d $_); }
+is($fc, 0, 			"multi-dir after $cycle");
 
 
 # ----- dump -----
@@ -201,6 +354,17 @@ like($obj1->dump([qw/ foo bar /], "yyy"), qr{yyy.+foo},	"dump arrayref extra");
 my %dump = ('foo' => 'bar', 'bar' => 'foo', 'hello' => 'world', 'world' => 'hello');
 like($obj1->dump(\%dump), qr{ba.+fo.+ba.+he.+wo.+he},	"dump hashref");
 like($obj1->dump(\%dump, "yyy"), qr{yyy.+ba.+fo.+ba},	"dump hashref extra");
+
+
+# ---- is_stdio -----
+my $fio = \*STDIN;
+is( $obj1->is_stdio($fio), 1,	"is_stdio stdin");
+$fio = \*STDOUT;
+is( $obj1->is_stdio($fio), 1,	"is_stdio stdout");
+$fio = \*STDERR;
+is( $obj1->is_stdio($fio), 1,	"is_stdio stderr");
+$fio = "null";
+ok( $obj1->is_stdio($fio) < 0,	"is_stdio failsafe");
 
 
 # ----- prefix -----
